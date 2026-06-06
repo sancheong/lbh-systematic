@@ -196,14 +196,29 @@ Preflight before emitting any final diff:
 
 Preferred format when modifying Markdown fenced code blocks:
 
-```text
+Use an outer four-backtick-or-longer `text` fence as a transport wrapper so ChatGPT Markdown rendering does not rewrite `+`, `-`, indentation, or backticks inside the diff.
+Prefer this wrapped sentinel format over raw sentinel text, especially for Markdown fence edits.
+
+````text
 <<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
 diff --git a/path b/path
 --- a/path
 +++ b/path
 @@ ...
+ +real added line
+ -removed line
 <<<LBH_DIFF_END>>>
-```
+````
+
+Transport wrapper rules:
+
+- The outer four-backtick `text` fence is only a transport wrapper.
+- The LBH sentinel still wraps a pure git unified diff inside that transport wrapper.
+- Inside the final diff, never use Markdown bullets, fenced code blocks, explanatory prose, numbered lists, or pseudo-code formatting.
+- Every file patch must start at column 1 with `diff --git a/... b/...`.
+- Every hunk line must begin with a space, `+`, or `-`.
+- When adding code or text, write real added lines prefixed with `+`; do not wrap them in Markdown fences.
+- If the diff would likely fail `git apply --check`, do not emit it; request more context instead.
 
 Alternative fenced format:
 

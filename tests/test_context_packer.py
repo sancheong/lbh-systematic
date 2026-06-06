@@ -20,6 +20,10 @@ def test_build_initial_prompt_includes_strict_protocol_guidance(tmp_path):
     assert "never use Markdown bullets, fenced code blocks, explanatory prose, numbered lists, or pseudo-code formatting." in prompt
     assert "Every file patch must start at column 1 with `diff --git a/... b/...`." in prompt
     assert "Every hunk line must begin with a space, `+`, or `-`." in prompt
+    assert "four-backtick-or-longer `text` fence" in prompt
+    assert "transport wrapper" in prompt
+    assert "does not rewrite `+`, `-`, indentation, or backticks inside the diff" in prompt
     assert "inspect the prompt generator, parser, CLI, tests, and docs together" in prompt
     assert "prefer the LBH sentinel diff format" in prompt
     assert '<<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>' in prompt
+    assert "inside it you must still produce a pure git unified diff" in prompt

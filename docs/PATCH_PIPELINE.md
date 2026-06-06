@@ -21,17 +21,21 @@ src/lbh/cli.py              # lbh respond, lbh apply 명령 연결
 
 권장 형식:
 
-```text
+`````markdown
+````text
 <<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
 diff --git a/src/foo.py b/src/foo.py
 --- a/src/foo.py
 +++ b/src/foo.py
 @@ ...
 <<<LBH_DIFF_END>>>
-```
+````
+`````
 
-LBH diff sentinel은 Markdown fence 충돌을 줄이기 위한 wrapper일 뿐입니다.
-sentinel 내부 patch는 여전히 `git apply --check`가 이해할 수 있는 순수 unified diff여야 합니다.
+LBH diff sentinel은 diff boundary를 알려주는 LBH marker입니다.
+ChatGPT 같은 Markdown UI를 통해 전달할 때는 sentinel을 raw text로 두지 말고 code fence 안에 담는 것이 더 안전합니다.
+4-backtick `text` wrapper는 diff 내부의 `+`, `-`, backtick, 들여쓰기가 Markdown으로 렌더링되는 것을 줄이기 위한 transport convention입니다.
+wrapper가 있더라도 sentinel 내부 patch는 여전히 `git apply --check`가 이해할 수 있는 순수 unified diff여야 합니다.
 
 ## 검증 항목
 

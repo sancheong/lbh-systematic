@@ -125,6 +125,8 @@ dist/lbh-systematic.zip
 - [ ] protocol/output-format 변경 시 `src/lbh/context/packer.py`, parser, CLI, tests, docs를 함께 확인
 - [ ] protocol/output-format 변경 시 “경로 추측 READ 금지”와 “순수 unified diff 출력” 규칙을 prompt/tests/docs에 반영
 - [ ] Markdown fence 충돌을 피하려고 sentinel을 써도, sentinel 내부 diff syntax는 순수 unified diff로 유지
+- [ ] final diff transport 규칙 변경 시 parser extraction test와 prompt regression test를 함께 추가
+- [ ] Markdown UI를 통한 diff 전달에서는 code-fenced transport wrapper를 반드시 고려
 - [ ] session/manifest 변경 시 `src/lbh/session/manager.py` 확인
 - [ ] unit test 추가
 - [ ] demo repo smoke test 통과

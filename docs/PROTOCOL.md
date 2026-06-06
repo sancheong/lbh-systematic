@@ -81,12 +81,14 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 
 ## 최종 diff 형식
 
-가장 안정적인 형식은 sentinel입니다.
+가장 권장하는 형식은 4-backtick 이상의 `text` fenced block 안에 들어 있는 LBH sentinel diff입니다.
+raw sentinel 본문도 parser는 처리할 수 있지만, ChatGPT UI에서 `+`, `-`, 들여쓰기, backtick이 Markdown으로 다시 해석될 수 있어 권장하지 않습니다.
 
-Markdown fenced code block을 수정하는 패치에서는 sentinel diff 형식을 권장합니다.
-fenced `lbh-diff` block 안에 다시 Markdown fence가 들어가면 응답이 깨질 가능성이 있기 때문입니다.
+Markdown fenced code block을 수정하는 패치에서는 이 형식이 특히 중요합니다.
+outer code fence는 transport wrapper이고, sentinel 내부는 여전히 순수 git unified diff여야 합니다.
 
-```text
+`````markdown
+````text
 <<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
 diff --git a/src/foo.py b/src/foo.py
 --- a/src/foo.py
@@ -95,7 +97,8 @@ diff --git a/src/foo.py b/src/foo.py
 -old
 +new
 <<<LBH_DIFF_END>>>
-```
+````
+`````
 
 또는 fenced block도 허용합니다.
 
@@ -114,7 +117,8 @@ sentinel diff를 쓰더라도 내부는 순수 git unified diff여야 합니다.
 - diff 내부에 Markdown bullet, fenced code block, 설명문, numbered list를 넣으면 안 됩니다.
 - `diff --git` header는 반드시 column 1에서 시작해야 합니다.
 - hunk 내부 줄은 공백, `+`, `-` 중 하나로 시작해야 합니다.
-- sentinel은 Markdown fence 충돌을 피하기 위한 wrapper일 뿐이며, 내부 diff 문법을 느슨하게 만들지 않습니다.
+- outer code fence는 transport wrapper일 뿐이며, sentinel과 내부 diff 문법을 느슨하게 만들지 않습니다.
+- Markdown fence edits에서는 raw sentinel보다 4-backtick wrapped sentinel을 우선 권장합니다.
 
 ## LBH의 검증 규칙
 

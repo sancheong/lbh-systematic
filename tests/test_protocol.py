@@ -24,3 +24,39 @@ def test_extract_sentinel_diff():
     diff = extract_diff(raw)
     assert diff is not None
     assert diff.startswith("diff --git")
+
+
+def test_extract_sentinel_diff_inside_text_fence():
+    raw = """````text
+<<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
+diff --git a/a.md b/a.md
+--- a/a.md
++++ b/a.md
+@@ -1 +1 @@
+-old
++new
+<<<LBH_DIFF_END>>>
+````"""
+    diff = extract_diff(raw)
+    assert diff is not None
+    assert diff.startswith("diff --git")
+    assert "+new" in diff
+
+
+def test_extract_sentinel_diff_with_markdown_fence_content():
+    raw = """````text
+<<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
+diff --git a/docs/example.md b/docs/example.md
+--- a/docs/example.md
++++ b/docs/example.md
+@@ -1 +1,4 @@
+ title
++```python
++print("hello")
++```
+<<<LBH_DIFF_END>>>
+````"""
+    diff = extract_diff(raw)
+    assert diff is not None
+    assert "```python" in diff
+    assert '+print("hello")' in diff
