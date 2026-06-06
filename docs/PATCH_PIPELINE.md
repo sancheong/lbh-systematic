@@ -47,6 +47,8 @@ diff --git a/src/foo.py b/src/foo.py
 ## read-before-modify 정책
 
 세션 manifest에는 모델에게 제공된 파일이 기록됩니다.
+여기서 `read_files`는 모델이 실제로 받은 파일 본문 범위를 뜻합니다.
+repo map에 등장한 파일은 관련 후보일 뿐이고, READ된 파일이 아닙니다.
 
 ```json
 {
@@ -60,7 +62,12 @@ diff --git a/src/foo.py b/src/foo.py
 ```
 
 모델이 읽지 않은 파일을 수정하려고 하면 기본적으로 거절합니다.
+문서 파일을 수정하려는 경우에도 해당 문서 파일 본문이 먼저 제공되어야 합니다.
+`validate_diff()`는 이런 읽지 않은 파일 수정을 거절합니다.
 이 정책이 hallucinated patch를 줄이는 가장 중요한 장치입니다.
+
+Markdown code fence가 들어 있는 문서를 수정할 때는 fenced `lbh-diff`보다 sentinel diff가 더 안전합니다.
+응답 안의 fenced block이 중첩되면서 diff가 깨질 가능성을 줄일 수 있기 때문입니다.
 
 ## 적용 순서
 

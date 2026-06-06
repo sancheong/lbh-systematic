@@ -51,6 +51,7 @@ schema 변경 시 `SCHEMA_VERSION`을 올리고 migration을 추가하세요.
 
 모델에게 전달되는 prompt를 만듭니다.
 여기서 중요한 것은 “많이 넣기”가 아니라 “추적 가능한 근거를 넣기”입니다.
+프로토콜이나 출력 형식 관련 변경에서는 `context/packer.py`를 반드시 함께 확인하세요.
 
 반드시 포함할 것:
 
@@ -65,6 +66,7 @@ schema 변경 시 `SCHEMA_VERSION`을 올리고 migration을 추가하세요.
 
 모델 출력은 항상 불안정할 수 있습니다.
 parser는 최대한 관대하게 읽되, patch 적용 단계에서는 엄격해야 합니다.
+하지만 parser만 보고 끝내지 마세요. protocol 변경이면 prompt, CLI, docs, tests도 같이 확인해야 합니다.
 
 지원해야 하는 형식:
 
@@ -120,5 +122,7 @@ dist/lbh-systematic.zip
 - [ ] config 추가 시 `docs/CONFIG.md` 업데이트
 - [ ] 보안 관련 변경 시 `docs/SECURITY.md` 업데이트
 - [ ] protocol 변경 시 `docs/PROTOCOL.md` 업데이트
+- [ ] protocol/output-format 변경 시 `src/lbh/context/packer.py`, parser, CLI, tests, docs를 함께 확인
+- [ ] session/manifest 변경 시 `src/lbh/session/manager.py` 확인
 - [ ] unit test 추가
 - [ ] demo repo smoke test 통과

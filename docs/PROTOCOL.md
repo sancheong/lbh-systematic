@@ -10,13 +10,18 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 
 ```text
 1. 제공받은 컨텍스트만 사용한다.
-2. 더 필요한 파일은 lbh-tool 또는 [READ: path]로 요청한다.
-3. 아직 읽지 않은 파일은 수정하지 않는다.
-4. 최종 답변은 diff 블록 하나만 출력한다.
-5. 모르면 추측하지 말고 컨텍스트를 요청한다.
+2. 더 필요한 파일은 fenced `lbh-tool` block 또는 [READ: path]로 요청한다.
+3. raw JSON만 출력하거나 `json` fenced block을 쓰지 않는다.
+4. schema에 없는 필드를 만들지 않는다.
+5. 아직 읽지 않은 파일은 수정하지 않는다.
+6. 최종 답변은 diff 블록 하나만 출력한다.
+7. 모르면 추측하지 말고 컨텍스트를 요청한다.
 ```
 
 ## 권장 tool 요청 형식
+
+추가 컨텍스트 요청은 반드시 정확히 하나의 fenced `lbh-tool` block이어야 합니다.
+다음은 올바른 예시입니다.
 
 ```lbh-tool
 {
@@ -32,14 +37,31 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 }
 ```
 
-지원 op:
+다음은 올바르지 않습니다.
 
-- `READ`: 특정 파일 범위 읽기
-- `GREP`: 정규식/문자열 검색
-- `FIND_SYMBOL`: symbol 이름 검색
-- `LIST_DIR`: 디렉터리 목록
-- `DEP_GRAPH`: import 관계 주변 보기
-- `TEST_HINTS`: 관련 test 후보 보기
+```text
+{ ...raw json only... }
+```
+
+````markdown
+```json
+{ ... }
+```
+````
+
+## 지원 op와 request shape
+
+실제 구현 기준 허용 필드:
+
+- `READ`: `op`, `path`, `ranges`, `why`
+- `GREP`: `op`, `pattern` 권장, `query` 허용, `globs`, `max_results`, `why`
+- `FIND_SYMBOL`: `op`, `query` 권장, `pattern` 허용, `max_results`, `why`
+- `LIST_DIR`: `op`, `path`, `why`
+- `DEP_GRAPH`: `op`, `path`, `why`
+- `TEST_HINTS`: `op`, `path`, `why`
+
+모델은 위 schema에 없는 필드를 만들면 안 됩니다.
+특히 `FIND_SYMBOL`에서 `symbol` 같은 필드를 만들어서는 안 됩니다.
 
 ## Legacy READ 형식
 
@@ -53,6 +75,9 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 ## 최종 diff 형식
 
 가장 안정적인 형식은 sentinel입니다.
+
+Markdown fenced code block을 수정하는 패치에서는 sentinel diff 형식을 권장합니다.
+fenced `lbh-diff` block 안에 다시 Markdown fence가 들어가면 응답이 깨질 가능성이 있기 때문입니다.
 
 ```text
 <<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>
@@ -84,7 +109,9 @@ diff --git a/src/foo.py b/src/foo.py
 - path는 repo 내부 상대 경로여야 한다.
 - `../`, 절대 경로, symlink escape는 거부한다.
 - `.env`, key, pem, credential 파일은 거부한다.
-- 새 파일이 아닌 수정 파일은 세션 중 READ된 적이 있어야 한다.
+- 새 파일이 아닌 수정 파일은 세션 중 READ 또는 snippet으로 실제 본문이 제공된 적이 있어야 한다.
+- repo map, directory tree, grep 결과, symbol 검색 결과는 read-before-modify를 만족하지 않는다.
+- 문서 파일도 코드 파일과 동일하게 먼저 본문이 제공되어야 한다.
 - `git apply --check`를 통과해야 한다.
 
 ## context append 형식
@@ -104,3 +131,4 @@ round: 1
 ```
 
 이 형식은 모델이 line number와 파일 hash를 함께 볼 수 있도록 만든 것입니다.
+이 `<file ...>` block이나 initial prompt의 `<snippet ...>` block만이 “파일 본문을 실제로 봤다”는 근거로 취급됩니다.
