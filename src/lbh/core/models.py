@@ -94,3 +94,51 @@ class SessionPaths:
     manifest: Path
     transcript: Path
     patch: Path
+    candidates: Path
+
+
+@dataclass(frozen=True)
+class CandidatePaths:
+    index: int
+    diff: Path
+    validation: Path
+    critique: Path
+    repair_prompt: Path
+
+
+@dataclass(frozen=True)
+class CandidateIssue:
+    kind: str
+    message: str
+    severity: str = "blocking"
+
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind, "message": self.message, "severity": self.severity}
+
+
+@dataclass
+class CandidateValidation:
+    candidate: str
+    ok: bool
+    promoted_to_patch: bool = False
+    errors: list[CandidateIssue] = field(default_factory=list)
+    warnings: list[CandidateIssue] = field(default_factory=list)
+    preserve: list[str] = field(default_factory=list)
+    repair_instruction: list[str] = field(default_factory=list)
+    modified_files: list[str] = field(default_factory=list)
+    new_files: list[str] = field(default_factory=list)
+    deleted_files: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate": self.candidate,
+            "ok": self.ok,
+            "promoted_to_patch": self.promoted_to_patch,
+            "errors": [item.to_dict() for item in self.errors],
+            "warnings": [item.to_dict() for item in self.warnings],
+            "preserve": list(self.preserve),
+            "repair_instruction": list(self.repair_instruction),
+            "modified_files": list(self.modified_files),
+            "new_files": list(self.new_files),
+            "deleted_files": list(self.deleted_files),
+        }

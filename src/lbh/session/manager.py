@@ -39,6 +39,8 @@ class SessionManager:
             "read_files": {},
             "tool_round": 0,
             "context_appends": [],
+            "latest_candidate": None,
+            "candidates": [],
             "patch": None,
             "events": [],
         }
@@ -55,6 +57,7 @@ class SessionManager:
             manifest=root / "manifest.json",
             transcript=root / "transcript.jsonl",
             patch=root / "patch.diff",
+            candidates=root / "candidates",
         )
 
     def load_manifest(self, session_root: str | Path) -> dict[str, Any]:

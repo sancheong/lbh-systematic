@@ -30,6 +30,8 @@ src/lbh/core/models.py
 - ranked files
 - context append 목록
 - read files
+- latest candidate
+- candidate artifact 목록
 - patch file
 - patch validation 결과
 ```
@@ -50,8 +52,21 @@ response.md
 ```text
 final.md
   -> lbh respond
-  -> patch.diff
-  -> manifest.patch_validation 업데이트
+  -> candidates/candidate_001.diff
+  -> candidate_001.validation.json
+  -> candidate_001.critique.md
+  -> candidate_001.repair_prompt.md
+  -> validation 통과 시에만 patch.diff 로 promote
+```
+
+candidate 산출물:
+
+```text
+.lbh/sessions/<id>/candidates/
+  candidate_001.diff
+  candidate_001.validation.json
+  candidate_001.critique.md
+  candidate_001.repair_prompt.md
 ```
 
 ## read_files가 중요한 이유

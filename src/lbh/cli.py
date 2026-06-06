@@ -12,6 +12,13 @@ from lbh.core.fs import format_numbered_lines, read_text, redact_secrets
 from lbh.core.paths import find_repo_root, index_dir, resolve_repo_path
 from lbh.indexer.builder import RepoIndexer
 from lbh.patch.apply import git_apply, git_apply_check
+from lbh.patch.candidate import (
+    candidate_paths,
+    next_candidate_index,
+    render_candidate_critique,
+    render_repair_prompt,
+    validate_candidate,
+)
 from lbh.patch.diff import validate_diff
 from lbh.protocol.parser import extract_diff, parse_tool_requests
 from lbh.protocol.tools import ToolExecutor
@@ -102,20 +109,66 @@ def cmd_respond(args: argparse.Namespace) -> int:
 
     if diff:
         manifest = manager.load_manifest(session_root)
-        validation = validate_diff(diff, repo, config, read_files=manifest.get("read_files", {}))
         session_paths = manager.paths(session_root)
-        session_paths.patch.write_text(diff, encoding="utf-8")
-        manifest["patch"] = {"path": session_paths.patch.name, "validation": validation.__dict__}
-        manager.write_manifest(session_root, manifest)
+        candidate_index = next_candidate_index(session_root)
+        paths = candidate_paths(session_root, candidate_index)
+        paths.diff.write_text(diff, encoding="utf-8")
+
+        candidate_rel = paths.diff.relative_to(session_root).as_posix()
+        validation = validate_candidate(
+            diff=diff,
+            raw_response=raw,
+            candidate=candidate_rel,
+            candidate_path=paths.diff,
+            repo_root=repo,
+            config=config,
+            read_files=manifest.get("read_files", {}),
+        )
+
+        manifest["latest_candidate"] = candidate_rel
         if validation.ok:
-            print(f"Patch extracted and validated: {session_paths.patch}")
+            validation.promoted_to_patch = True
+            session_paths.patch.write_text(diff, encoding="utf-8")
+            manifest["patch"] = {
+                "path": session_paths.patch.name,
+                "source_candidate": candidate_rel,
+                "validation": validation.to_dict(),
+            }
+        paths.validation.write_text(json.dumps(validation.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        paths.critique.write_text(render_candidate_critique(validation), encoding="utf-8")
+        paths.repair_prompt.write_text(render_repair_prompt(validation), encoding="utf-8")
+        manifest.setdefault("candidates", []).append(
+            {
+                "path": candidate_rel,
+                "validation": paths.validation.relative_to(session_root).as_posix(),
+                "critique": paths.critique.relative_to(session_root).as_posix(),
+                "repair_prompt": paths.repair_prompt.relative_to(session_root).as_posix(),
+                "ok": validation.ok,
+                "promoted_to_patch": validation.promoted_to_patch,
+            }
+        )
+        manager.write_manifest(session_root, manifest)
+        manager.append_event(
+            session_root,
+            {
+                "type": "candidate_patch",
+                "file": candidate_rel,
+                "ok": validation.ok,
+                "promoted_to_patch": validation.promoted_to_patch,
+            },
+        )
+        print(f"Candidate extracted: {paths.diff}")
+        if validation.ok:
+            print("Candidate validation passed.")
+            print(f"Promoted to patch: {session_paths.patch}")
             print(f"Modified files: {', '.join(validation.modified_files) or '(none)'}")
             print("Next:")
             print(f"  lbh apply {session_paths.patch} --session {session_root} --check")
         else:
-            print(f"Patch extracted but validation failed: {session_paths.patch}", file=sys.stderr)
-            for err in validation.errors:
-                print(f"- {err}", file=sys.stderr)
+            print("Candidate validation failed.", file=sys.stderr)
+            print(f"Critique: {paths.critique}", file=sys.stderr)
+            print(f"Repair prompt: {paths.repair_prompt}", file=sys.stderr)
+            print("Patch was not promoted.", file=sys.stderr)
             return 3
         return 0
 

@@ -6,6 +6,9 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 1. 추가 컨텍스트 요청
 2. 최종 unified diff
 
+운영상 모델이 낸 최종 diff는 바로 적용되지 않습니다.
+LBH는 먼저 이를 candidate patch로 저장하고 deterministic validation을 수행한 뒤, 통과한 경우에만 `patch.diff`로 promote합니다.
+
 ## 모델에게 주는 핵심 규칙
 
 ```text

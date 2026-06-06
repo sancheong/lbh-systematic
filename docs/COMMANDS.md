@@ -74,10 +74,15 @@ context_append_001.md
 응답에 diff가 있으면:
 
 ```text
-patch.diff
+candidates/candidate_001.diff
+candidates/candidate_001.validation.json
+candidates/candidate_001.critique.md
+candidates/candidate_001.repair_prompt.md
 ```
 
 가 생성됩니다.
+candidate validation이 통과한 경우에만 `patch.diff`로 승격됩니다.
+실패하면 critique와 repair prompt 위치를 출력하고 `patch.diff`는 승격되지 않습니다.
 
 ## `lbh read`
 

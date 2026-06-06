@@ -37,6 +37,21 @@ ChatGPT 같은 Markdown UI를 통해 전달할 때는 sentinel을 raw text로 �
 4-backtick `text` wrapper는 diff 내부의 `+`, `-`, backtick, 들여쓰기가 Markdown으로 렌더링되는 것을 줄이기 위한 transport convention입니다.
 wrapper가 있더라도 sentinel 내부 patch는 여전히 `git apply --check`가 이해할 수 있는 순수 unified diff여야 합니다.
 
+## candidate patch workflow
+
+ChatGPT가 만든 diff는 먼저 final patch가 아니라 candidate patch로 저장됩니다.
+
+```text
+.lbh/sessions/<id>/candidates/candidate_001.diff
+.lbh/sessions/<id>/candidates/candidate_001.validation.json
+.lbh/sessions/<id>/candidates/candidate_001.critique.md
+.lbh/sessions/<id>/candidates/candidate_001.repair_prompt.md
+```
+
+candidate validation이 완전히 통과할 때만 `patch.diff`로 promote됩니다.
+실패하면 `patch.diff`를 만들거나 덮어쓰지 않고, critique와 repair prompt를 남깁니다.
+Codex는 이 repair prompt를 사용해 전체 재구현이 아니라 candidate patch의 최소 수리만 수행할 수 있습니다.
+
 ## 검증 항목
 
 `validate_diff()`는 다음을 확인합니다.

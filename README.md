@@ -18,6 +18,7 @@ LBH는 로컬 프로젝트와 강력한 추론 모델 사이를 연결하는 **�
 - `[READ: path]`와 `lbh-tool` JSON 요청 처리
 - `READ`, `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, `TEST_HINTS` 도구 실행
 - `lbh-diff`, `diff`, sentinel diff 블록 추출
+- ChatGPT diff를 candidate patch로 저장하고 검증 report/critique/repair prompt 생성
 - diff 경로 검증, 읽지 않은 파일 수정 차단
 - `git apply --check`와 실제 적용
 - 세션별 manifest/transcript 기록
@@ -96,7 +97,8 @@ LBH가 요청된 파일들을 읽어 다음 파일을 만듭니다.
 lbh respond final.md --session .lbh/sessions/<session-id>
 ```
 
-최종 diff는 여기에 저장됩니다.
+LBH는 먼저 candidate diff와 validation 결과를 세션 아래 `candidates/`에 저장합니다.
+검증이 통과한 경우에만 최종 diff가 여기에 저장됩니다.
 
 ```text
 .lbh/sessions/<session-id>/patch.diff
