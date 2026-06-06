@@ -63,6 +63,13 @@ LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제�
 모델은 위 schema에 없는 필드를 만들면 안 됩니다.
 특히 `FIND_SYMBOL`에서 `symbol` 같은 필드를 만들어서는 안 됩니다.
 
+## READ path 규칙
+
+- READ path는 Repository Map, Relevant Directory Tree, Evidence Snippets, 또는 이전 LBH tool result에 정확히 등장한 경로만 사용해야 합니다.
+- import 문, module name, documentation mention, comment, 관례적 패키지 구조만으로 경로를 만들어 READ하면 안 됩니다.
+- 경로가 추론만 가능한 경우에는 먼저 `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`로 정확한 경로를 확인하세요.
+- `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, `TEST_HINTS`는 경로 발견과 주변 탐색용이지, 최종 수정 대상 파일의 본문 READ를 대체하지 않습니다.
+
 ## Legacy READ 형식
 
 간단한 수동 흐름에서는 아래도 지원합니다.
@@ -102,6 +109,12 @@ diff --git a/src/foo.py b/src/foo.py
 +new
 ```
 ````
+
+sentinel diff를 쓰더라도 내부는 순수 git unified diff여야 합니다.
+- diff 내부에 Markdown bullet, fenced code block, 설명문, numbered list를 넣으면 안 됩니다.
+- `diff --git` header는 반드시 column 1에서 시작해야 합니다.
+- hunk 내부 줄은 공백, `+`, `-` 중 하나로 시작해야 합니다.
+- sentinel은 Markdown fence 충돌을 피하기 위한 wrapper일 뿐이며, 내부 diff 문법을 느슨하게 만들지 않습니다.
 
 ## LBH의 검증 규칙
 

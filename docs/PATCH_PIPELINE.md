@@ -30,6 +30,9 @@ diff --git a/src/foo.py b/src/foo.py
 <<<LBH_DIFF_END>>>
 ```
 
+LBH diff sentinel은 Markdown fence 충돌을 줄이기 위한 wrapper일 뿐입니다.
+sentinel 내부 patch는 여전히 `git apply --check`가 이해할 수 있는 순수 unified diff여야 합니다.
+
 ## 검증 항목
 
 `validate_diff()`는 다음을 확인합니다.
@@ -68,6 +71,8 @@ repo map에 등장한 파일은 관련 후보일 뿐이고, READ된 파일이 �
 
 Markdown code fence가 들어 있는 문서를 수정할 때는 fenced `lbh-diff`보다 sentinel diff가 더 안전합니다.
 응답 안의 fenced block이 중첩되면서 diff가 깨질 가능성을 줄일 수 있기 때문입니다.
+다만 sentinel을 쓴다고 해서 hunk 내부에 Markdown bullet, fenced code block, 설명문을 넣어도 되는 것은 아닙니다.
+그런 formatting이 섞이면 diff는 여전히 깨집니다.
 
 ## 적용 순서
 
