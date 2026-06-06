@@ -1,5 +1,20 @@
 # Patch Pipeline
 
+## Automation Runtime Integration
+
+When `lbh automate` is used, the patch pipeline is still the same deterministic LBH pipeline:
+
+1. ChatGPT returns a diff.
+2. `lbh respond` stores it as `candidates/candidate_NNN.diff`.
+3. LBH writes:
+   - `candidate_NNN.validation.json`
+   - `candidate_NNN.critique.md`
+   - `candidate_NNN.repair_prompt.md`
+4. Only a fully valid candidate is promoted to `patch.diff`.
+5. The automation runtime then runs `lbh apply --check`, and optionally `lbh apply --yes`.
+
+If candidate validation fails, automation does not redesign the patch. It sends the generated repair prompt back to the same ChatGPT conversation and attempts a minimal repair round.
+
 이 문서는 모델이 생성한 diff를 안전하게 로컬에 적용하는 과정을 설명합니다.
 
 ## 관련 코드

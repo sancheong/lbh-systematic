@@ -1,5 +1,12 @@
 # Development Guide for Future Coders
 
+## Automation Checklist
+
+- [ ] If you change `lbh automate`, update both runner tests and CLI-level tests.
+- [ ] Keep browser transport logic out of repo search, tool execution, and patch validation code.
+- [ ] Resume behavior must preserve the one-session / one-chat mapping.
+- [ ] Candidate validation and promotion rules must stay identical between manual `lbh respond` and automated runs.
+
 이 문서는 이후 LBH 코드를 확장할 개발자를 위한 지시사항입니다.
 
 ## 개발 원칙

@@ -1,5 +1,19 @@
 # LBH Protocol
 
+## Candidate Validation Under Automation
+
+The model output format does not change under `lbh automate`:
+
+- tool requests still use exactly one fenced `lbh-tool` block
+- final patches still use a valid LBH diff form
+
+What changes is the operating flow:
+
+- the automation runtime forwards ChatGPT output into `lbh respond`
+- any diff is first stored as a candidate patch
+- validation must pass before `patch.diff` exists
+- failed candidates generate critique and repair prompt artifacts for the next ChatGPT round
+
 LBH 프로토콜은 모델이 로컬 파일을 직접 볼 수 없다는 전제에서 동작합니다.
 모델은 두 가지 중 하나만 출력해야 합니다.
 

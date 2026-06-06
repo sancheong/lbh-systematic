@@ -1,5 +1,14 @@
 # LBH: Local-Browser-Hybrid Context Broker
 
+## Automation Runtime
+
+LBH now includes a thin automation runtime for Chrome/ChatGPT orchestration.
+
+- `lbh automate "<request>"` starts a fresh LBH session, opens or resumes one ChatGPT conversation through an external browser controller, and loops through `initial_prompt.md`, `context_append_###.md`, candidate critique / repair prompts, and final apply.
+- `lbh automate --session <session-root>` resumes a stopped session from the persisted automation state in `manifest.json`.
+- The runtime does not bypass LBH validation. ChatGPT output still flows through `lbh respond`, candidate patch validation, `patch.diff` promotion, and `lbh apply --check` / `--yes`.
+- Browser automation is intentionally kept outside LBH core semantics. The runtime expects an external controller command via `--controller-command` or `LBH_BROWSER_CONTROLLER_COMMAND`.
+
 LBH는 로컬 프로젝트와 강력한 추론 모델 사이를 연결하는 **로컬 컨텍스트 브로커**입니다.
 이 패키지는 설계서의 핵심 요소인 **로컬 인덱싱**, **관련 파일 검색**, **Lazy Loading 프로토콜**, **diff-only 출력 검증**, **git apply 안전 적용**을 실행 가능한 형태로 반영합니다.
 

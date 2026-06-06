@@ -1,5 +1,21 @@
 # Transport Layer
 
+## Browser Controller Contract
+
+`lbh automate` does not hardcode a Chrome automation library inside LBH core. Instead, it talks to an external browser controller command.
+
+The command receives one JSON payload on stdin and must return one JSON object on stdout.
+
+Supported actions:
+
+- `start_chat`
+- `resume_chat`
+- `send_message`
+- `wait_for_response`
+- `capture_debug`
+
+This keeps browser transport swappable while preserving the main LBH rule: repo indexing, tool execution, candidate validation, and patch promotion remain inside LBH.
+
 transport는 LBH와 모델 사이에서 메시지를 주고받는 계층입니다.
 
 ## 관련 코드

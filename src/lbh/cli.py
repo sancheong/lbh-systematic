@@ -2,28 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
 import sys
 from pathlib import Path
 
 from lbh import __version__
-from lbh.context.packer import ContextPacker
+from lbh.automation import AutomationOptions, AutomationRunner, ShellBrowserController
 from lbh.core.config import Config, init_config
 from lbh.core.fs import format_numbered_lines, read_text, redact_secrets
 from lbh.core.paths import find_repo_root, index_dir, resolve_repo_path
 from lbh.indexer.builder import RepoIndexer
-from lbh.patch.apply import git_apply, git_apply_check
-from lbh.patch.candidate import (
-    candidate_paths,
-    next_candidate_index,
-    render_candidate_critique,
-    render_repair_prompt,
-    validate_candidate,
-)
-from lbh.patch.diff import validate_diff
-from lbh.protocol.parser import extract_diff, parse_tool_requests
-from lbh.protocol.tools import ToolExecutor
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
+from lbh.workflow import apply_patch_file, ask_request, process_response_file
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -67,113 +59,45 @@ def cmd_search(args: argparse.Namespace) -> int:
 def cmd_ask(args: argparse.Namespace) -> int:
     repo = find_repo_root()
     ensure_index(repo)
-    config = Config.load(repo)
-    ranked = SearchRanker(repo).rank(args.request, limit=args.limit or config.initial_file_limit)
-    manager = SessionManager(repo)
-    session = manager.create(args.request, ranked=[item.__dict__ for item in ranked])
-    prompt = ContextPacker(repo, config).build_initial_prompt(args.request, ranked)
-    session.initial_prompt.write_text(prompt, encoding="utf-8")
-    print(f"Session: {session.root}")
-    print(f"Initial prompt: {session.initial_prompt}")
+    result = ask_request(repo, args.request, limit=args.limit)
+    print(f"Session: {result.session_root}")
+    print(f"Initial prompt: {result.initial_prompt}")
     print("Paste initial_prompt.md into your model. Then save the model response and run:")
-    print(f"  lbh respond response.md --session {session.root}")
+    print(f"  lbh respond response.md --session {result.session_root}")
     return 0
 
 
 def cmd_respond(args: argparse.Namespace) -> int:
     repo = find_repo_root()
-    config = Config.load(repo)
     session_root = Path(args.session)
     if not session_root.is_absolute():
         session_root = (Path.cwd() / session_root).resolve()
-    manager = SessionManager(repo)
-    raw = Path(args.response_file).read_text(encoding="utf-8")
-    manager.append_event(session_root, {"type": "model_response", "file": str(args.response_file)})
+    outcome = process_response_file(repo, session_root, Path(args.response_file))
 
-    requests = parse_tool_requests(raw)
-    diff = extract_diff(raw)
-
-    if requests and diff:
-        print("Response contains both tool requests and diff. Please provide only one kind of response.", file=sys.stderr)
-        return 2
-
-    if requests:
-        executor = ToolExecutor(repo, config, session_root)
-        append_text = executor.execute(requests)
-        out = manager.next_context_append_path(session_root)
-        out.write_text(append_text, encoding="utf-8")
-        manager.append_event(session_root, {"type": "context_append", "file": out.name, "request_count": len(requests)})
-        print(f"Context append written: {out}")
+    if outcome.kind == "error":
+        print(outcome.error_message, file=sys.stderr)
+        return outcome.return_code
+    if outcome.kind == "context_append" and outcome.context_append is not None:
+        print(f"Context append written: {outcome.context_append}")
         print("Paste this context_append file back into the model.")
-        return 0
-
-    if diff:
-        manifest = manager.load_manifest(session_root)
-        session_paths = manager.paths(session_root)
-        candidate_index = next_candidate_index(session_root)
-        paths = candidate_paths(session_root, candidate_index)
-        paths.diff.write_text(diff, encoding="utf-8")
-
-        candidate_rel = paths.diff.relative_to(session_root).as_posix()
-        validation = validate_candidate(
-            diff=diff,
-            raw_response=raw,
-            candidate=candidate_rel,
-            candidate_path=paths.diff,
-            repo_root=repo,
-            config=config,
-            read_files=manifest.get("read_files", {}),
-        )
-
-        manifest["latest_candidate"] = candidate_rel
-        if validation.ok:
-            validation.promoted_to_patch = True
-            session_paths.patch.write_text(diff, encoding="utf-8")
-            manifest["patch"] = {
-                "path": session_paths.patch.name,
-                "source_candidate": candidate_rel,
-                "validation": validation.to_dict(),
-            }
-        paths.validation.write_text(json.dumps(validation.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-        paths.critique.write_text(render_candidate_critique(validation), encoding="utf-8")
-        paths.repair_prompt.write_text(render_repair_prompt(validation), encoding="utf-8")
-        manifest.setdefault("candidates", []).append(
-            {
-                "path": candidate_rel,
-                "validation": paths.validation.relative_to(session_root).as_posix(),
-                "critique": paths.critique.relative_to(session_root).as_posix(),
-                "repair_prompt": paths.repair_prompt.relative_to(session_root).as_posix(),
-                "ok": validation.ok,
-                "promoted_to_patch": validation.promoted_to_patch,
-            }
-        )
-        manager.write_manifest(session_root, manifest)
-        manager.append_event(
-            session_root,
-            {
-                "type": "candidate_patch",
-                "file": candidate_rel,
-                "ok": validation.ok,
-                "promoted_to_patch": validation.promoted_to_patch,
-            },
-        )
-        print(f"Candidate extracted: {paths.diff}")
-        if validation.ok:
+        return outcome.return_code
+    if outcome.kind in {"candidate_ok", "candidate_failed"} and outcome.candidate is not None:
+        print(f"Candidate extracted: {outcome.candidate}")
+        if outcome.kind == "candidate_ok" and outcome.patch_path is not None:
             print("Candidate validation passed.")
-            print(f"Promoted to patch: {session_paths.patch}")
-            print(f"Modified files: {', '.join(validation.modified_files) or '(none)'}")
+            print(f"Promoted to patch: {outcome.patch_path}")
+            print(f"Modified files: {', '.join(outcome.modified_files) or '(none)'}")
             print("Next:")
-            print(f"  lbh apply {session_paths.patch} --session {session_root} --check")
-        else:
+            print(f"  lbh apply {outcome.patch_path} --session {session_root} --check")
+        elif outcome.critique_path is not None and outcome.repair_prompt_path is not None:
             print("Candidate validation failed.", file=sys.stderr)
-            print(f"Critique: {paths.critique}", file=sys.stderr)
-            print(f"Repair prompt: {paths.repair_prompt}", file=sys.stderr)
+            print(f"Critique: {outcome.critique_path}", file=sys.stderr)
+            print(f"Repair prompt: {outcome.repair_prompt_path}", file=sys.stderr)
             print("Patch was not promoted.", file=sys.stderr)
-            return 3
-        return 0
+        return outcome.return_code
 
-    print("No lbh-tool request or diff found in response.", file=sys.stderr)
-    return 1
+    print(outcome.error_message or "No lbh-tool request or diff found in response.", file=sys.stderr)
+    return outcome.return_code
 
 
 def cmd_read(args: argparse.Namespace) -> int:
@@ -197,36 +121,84 @@ def cmd_read(args: argparse.Namespace) -> int:
 
 def cmd_apply(args: argparse.Namespace) -> int:
     repo = find_repo_root()
-    config = Config.load(repo)
     diff_path = Path(args.patch)
     if not diff_path.is_absolute():
         diff_path = (Path.cwd() / diff_path).resolve()
-    diff = diff_path.read_text(encoding="utf-8")
-    read_files = {}
+    session_root = None
     if args.session:
         session_root = Path(args.session)
         if not session_root.is_absolute():
             session_root = (Path.cwd() / session_root).resolve()
-        read_files = SessionManager(repo).load_manifest(session_root).get("read_files", {})
-    validation = validate_diff(diff, repo, config, read_files=read_files)
-    if not validation.ok:
-        print("Diff validation failed:", file=sys.stderr)
-        for err in validation.errors:
-            print(f"- {err}", file=sys.stderr)
-        return 2
-    ok, output = git_apply_check(repo, diff_path)
-    if not ok:
-        print("git apply --check failed:", file=sys.stderr)
-        print(output, file=sys.stderr)
-        return 3
-    print("git apply --check passed")
+    outcome = apply_patch_file(repo, diff_path, session_root=session_root, check=args.check, yes=args.yes)
+    if not outcome.ok:
+        if outcome.return_code == 2:
+            print("Diff validation failed:", file=sys.stderr)
+            for err in outcome.validation_errors:
+                print(f"- {err}", file=sys.stderr)
+        else:
+            print("git apply --check failed:", file=sys.stderr)
+            print(outcome.output, file=sys.stderr)
+        return outcome.return_code
     if args.check:
+        print("git apply --check passed")
         return 0
-    if not args.yes:
-        print("Not applying because --yes was not provided.")
+    print(outcome.output)
+    return 0
+
+
+def build_browser_controller(args: argparse.Namespace) -> ShellBrowserController:
+    command_text = args.controller_command or os.environ.get("LBH_BROWSER_CONTROLLER_COMMAND", "")
+    if not command_text:
+        raise SystemExit(
+            "Browser controller command is required. Pass --controller-command or set LBH_BROWSER_CONTROLLER_COMMAND."
+        )
+    command = tuple(shlex.split(command_text, posix=False))
+    return ShellBrowserController(command, timeout_seconds=max(args.timeout_seconds, 60))
+
+
+def cmd_automate(args: argparse.Namespace) -> int:
+    repo = find_repo_root()
+    if args.request is None and not args.session:
+        print("Provide a request or --session to resume.", file=sys.stderr)
+        return 2
+    if args.request is not None and args.session:
+        print("Provide either a request or --session, not both.", file=sys.stderr)
+        return 2
+    if args.request is not None:
+        ensure_index(repo)
+    controller = build_browser_controller(args)
+    options = AutomationOptions(
+        chrome_profile=args.chrome_profile,
+        apply_mode=args.apply_mode,
+        max_retries=args.max_retries,
+        poll_seconds=args.poll_seconds,
+        timeout_seconds=args.timeout_seconds,
+        controller_kind="shell_command",
+        controller_command=tuple(shlex.split(args.controller_command or os.environ.get("LBH_BROWSER_CONTROLLER_COMMAND", ""), posix=False)),
+    )
+    runner = AutomationRunner(repo, controller, options)
+    if args.session:
+        session_root = Path(args.session)
+        if not session_root.is_absolute():
+            session_root = (Path.cwd() / session_root).resolve()
+        result = runner.resume(session_root)
+    else:
+        result = runner.start(args.request, limit=args.limit)
+    print(f"Session: {result.session_root}")
+    print(f"Automation state: {result.state}")
+    if result.chat_ref:
+        print(f"Chat ref: {result.chat_ref}")
+    if result.latest_outbound_artifact:
+        print(f"Latest outbound artifact: {result.latest_outbound_artifact}")
+    if result.latest_inbound_response:
+        print(f"Latest inbound response: {result.latest_inbound_response}")
+    if result.patch_path is not None:
+        print(f"Patch: {result.patch_path}")
+    if result.state == "blocked":
+        print("Automation stopped and is awaiting human intervention.", file=sys.stderr)
+        return 3
+    if result.state != "completed":
         return 0
-    output = git_apply(repo, diff_path)
-    print(output.strip() or "Patch applied")
     return 0
 
 
@@ -277,6 +249,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("request")
     sp.add_argument("--limit", type=int, default=None)
     sp.set_defaults(func=cmd_ask)
+
+    sp = sub.add_parser("automate", help="run LBH plus Chrome/ChatGPT automation")
+    sp.add_argument("request", nargs="?")
+    sp.add_argument("--session", help="resume an existing LBH session")
+    sp.add_argument("--limit", type=int, default=None)
+    sp.add_argument("--chrome-profile", default="Profile 4")
+    sp.add_argument("--controller-command", help="external browser controller command")
+    sp.add_argument("--apply-mode", choices=["check", "yes"], default="yes")
+    sp.add_argument("--max-retries", type=int, default=2)
+    sp.add_argument("--poll-seconds", type=float, default=2.0)
+    sp.add_argument("--timeout-seconds", type=int, default=300)
+    sp.set_defaults(func=cmd_automate)
 
     sp = sub.add_parser("respond", help="process a model response file")
     sp.add_argument("response_file")

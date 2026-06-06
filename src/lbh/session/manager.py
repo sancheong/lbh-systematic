@@ -42,6 +42,7 @@ class SessionManager:
             "latest_candidate": None,
             "candidates": [],
             "patch": None,
+            "automation": None,
             "events": [],
         }
         self.write_manifest(paths.root, manifest)

@@ -1,5 +1,30 @@
 # CLI Commands
 
+## `lbh automate`
+
+Runs the thin Chrome/ChatGPT automation runtime on top of the existing LBH session workflow.
+
+```bash
+lbh automate "fix the notification bug" --controller-command "python tools/chatgpt_controller.py"
+lbh automate --session .lbh/sessions/<session-id> --controller-command "python tools/chatgpt_controller.py"
+```
+
+Key options:
+
+- `--chrome-profile`: Chrome profile name. Default: `Profile 4`
+- `--controller-command`: external browser controller command
+- `--apply-mode check|yes`: after patch promotion, stop at `git apply --check` or continue to `--yes`
+- `--max-retries`: browser-step retry count before blocking the session
+- `--poll-seconds`, `--timeout-seconds`: response wait tuning
+
+Automation behavior:
+
+- starts one ChatGPT conversation per LBH session
+- sends `initial_prompt.md`, then any `context_append_###.md`
+- if a candidate patch fails validation, sends the generated `candidate_###.repair_prompt.md`
+- promotes only validated candidates to `patch.diff`
+- persists runtime state under `manifest.json -> automation`
+
 ## `lbh init`
 
 현재 프로젝트에 `.lbh/config.toml`을 생성합니다.

@@ -1,5 +1,42 @@
 # Session Lifecycle
 
+## Automation Metadata
+
+Automated runs add an `automation` section to `manifest.json`. The section records:
+
+- `provider`: currently `chatgpt_web`
+- `controller_kind`: currently `shell_command`
+- `chrome_profile`
+- `apply_mode`
+- `state`
+- `retry_counts`
+- `chat_ref`
+- `latest_outbound_artifact`
+- `latest_inbound_response`
+- `awaiting_human_intervention`
+- `debug_artifacts`
+
+Important states:
+
+- `created`
+- `sending_initial_prompt`
+- `waiting_for_response`
+- `running_lbh_respond`
+- `sending_context_append`
+- `candidate_failed`
+- `candidate_repairing`
+- `patch_promoted`
+- `apply_check`
+- `apply_yes`
+- `completed`
+- `blocked`
+
+A blocked session can be resumed with:
+
+```bash
+lbh automate --session .lbh/sessions/<session-id> --controller-command "python tools/chatgpt_controller.py"
+```
+
 세션은 하나의 사용자 요청을 처리하는 작업 단위입니다.
 
 ## 관련 코드

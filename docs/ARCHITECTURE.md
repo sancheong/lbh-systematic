@@ -1,5 +1,27 @@
 # LBH Architecture
 
+## 10. Automation Runtime
+
+The thin automation runtime sits above the existing LBH layers:
+
+```text
+User / Codex
+  -> Automation Runner
+     -> Browser Controller (Chrome / ChatGPT)
+     -> LBH Session Workflow (`ask`, `respond`, candidate validation, `apply`)
+```
+
+Responsibilities:
+
+- `automation/runner.py`: orchestration state machine
+- `automation/shell.py`: shell-command bridge to an external Chrome controller
+- `workflow.py`: reusable ask/respond/apply helpers shared by CLI and automation
+
+Important boundary:
+
+- the browser controller sends and receives messages only
+- it must not parse repo semantics, validate patches, or bypass LBH candidate promotion
+
 LBH는 “로컬 프로젝트를 볼 수 없는 모델”에게 필요한 코드 맥락만 안전하게 전달하는 프로그램입니다.
 설계서에서 말한 역할은 다음 5개 계층으로 나뉩니다.
 
