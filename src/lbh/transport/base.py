@@ -10,8 +10,14 @@ class ModelResponse:
     metadata: dict[str, str] | None = None
 
 
+@dataclass(frozen=True)
+class StartedSession:
+    session_id: str
+    response: ModelResponse
+
+
 class ModelTransport(Protocol):
-    def start_session(self, initial_prompt: str) -> str:
+    def start_session(self, initial_prompt: str) -> StartedSession:
         ...
 
     def send(self, session_id: str, message: str) -> ModelResponse:

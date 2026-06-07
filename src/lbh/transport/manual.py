@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import ModelResponse
+from .base import ModelResponse, StartedSession
 
 
 class ManualPasteTransport:
@@ -11,8 +11,11 @@ class ManualPasteTransport:
     adapter later.
     """
 
-    def start_session(self, initial_prompt: str) -> str:
-        return "manual"
+    def start_session(self, initial_prompt: str) -> StartedSession:
+        return StartedSession(
+            session_id="manual",
+            response=ModelResponse(text=initial_prompt, metadata={"transport": "manual"}),
+        )
 
     def send(self, session_id: str, message: str) -> ModelResponse:
         return ModelResponse(text=message, metadata={"transport": "manual"})

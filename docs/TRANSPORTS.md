@@ -23,6 +23,7 @@ transport는 LBH와 모델 사이에서 메시지를 주고받는 계층입니�
 ```text
 src/lbh/transport/base.py
 src/lbh/transport/manual.py
+src/lbh/transport/catgpt_gateway.py
 ```
 
 현재 구현은 수동 transport입니다.
@@ -32,6 +33,16 @@ src/lbh/transport/manual.py
 2. 사용자가 prompt를 모델에 붙여넣음
 3. 사용자가 모델 응답을 response.md로 저장
 4. lbh respond가 응답을 파싱
+```
+
+`CatGPT-Gateway`를 쓰는 경우에는 같은 경계를 유지한 채 수동 copy/paste만 HTTP adapter로 바꿉니다.
+
+```text
+1. LBH가 initial_prompt.md 생성
+2. gateway가 /thread/new 로 첫 메시지를 전송
+3. gateway가 assistant 응답을 response_001.md로 저장
+4. lbh respond가 응답을 파싱
+5. context append 또는 repair prompt를 같은 thread_id로 다시 전송
 ```
 
 ## 왜 수동 transport부터 시작하는가
@@ -54,7 +65,8 @@ transport를 먼저 자동화하면 디버깅이 어려워집니다.
 
 ```python
 class ModelTransport(Protocol):
-    def send(self, message: str) -> ModelResponse: ...
+    def start_session(self, initial_prompt: str) -> StartedSession: ...
+    def send(self, session_id: str, message: str) -> ModelResponse: ...
 ```
 
 금지 사항:

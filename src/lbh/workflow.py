@@ -7,6 +7,7 @@ from pathlib import Path
 from lbh.context.packer import ContextPacker
 from lbh.core.config import Config
 from lbh.indexer.builder import RepoIndexer
+from lbh.patch.apply import git_apply, git_apply_check
 from lbh.patch.candidate import (
     candidate_paths,
     next_candidate_index,
@@ -14,7 +15,6 @@ from lbh.patch.candidate import (
     render_repair_prompt,
     validate_candidate,
 )
-from lbh.patch.apply import git_apply, git_apply_check
 from lbh.patch.diff import validate_diff
 from lbh.protocol.parser import extract_diff, parse_tool_requests
 from lbh.protocol.tools import ToolExecutor
@@ -65,6 +65,24 @@ def ask_request(repo: Path, request: str, *, limit: int | None = None) -> AskRes
     prompt = ContextPacker(repo, config).build_initial_prompt(request, ranked)
     session.initial_prompt.write_text(prompt, encoding="utf-8")
     return AskResult(session_root=session.root, initial_prompt=session.initial_prompt)
+
+
+def create_session_for_request(
+    repo: Path,
+    request: str,
+    *,
+    config: Config | None = None,
+    limit: int | None = None,
+) -> tuple[Path, Path]:
+    if config is not None:
+        ranked = SearchRanker(repo).rank(request, limit=limit or config.initial_file_limit)
+        manager = SessionManager(repo)
+        session = manager.create(request, ranked=[item.__dict__ for item in ranked])
+        prompt = ContextPacker(repo, config).build_initial_prompt(request, ranked)
+        session.initial_prompt.write_text(prompt, encoding="utf-8")
+        return session.root, session.initial_prompt
+    result = ask_request(repo, request, limit=limit)
+    return result.session_root, result.initial_prompt
 
 
 def process_response_file(repo: Path, session_root: Path, response_file: Path) -> ResponseOutcome:

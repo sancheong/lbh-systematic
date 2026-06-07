@@ -31,6 +31,7 @@ LBH는 로컬 프로젝트와 강력한 추론 모델 사이를 연결하는 **�
 - diff 경로 검증, 읽지 않은 파일 수정 차단
 - `git apply --check`와 실제 적용
 - 세션별 manifest/transcript 기록
+- 수동 transport 대신 `CatGPT-Gateway` thread API를 붙일 수 있는 transport adapter 경계
 
 포함하지 않음:
 

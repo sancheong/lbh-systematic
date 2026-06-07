@@ -98,28 +98,34 @@ You must work only from the context provided by LBH.
 
 1. Do not modify any file unless its content has been provided through LBH context in this session.
 2. If you need more information, output exactly one fenced `lbh-tool` block.
-3. Do not output raw JSON, a `json` fenced block, or prose outside the `lbh-tool` block when requesting context.
-4. If you are ready to patch, output exactly one `lbh-diff` block or LBH diff sentinel block.
-5. Before any final diff, verify that every file you modify was actually provided in this session through a `<file>` or `<snippet>` block.
-6. Repository map, directory tree, grep results, symbol search results, and import paths do not count as file body reads.
-7. If any file you want to modify has not been provided as file body context yet, do not emit a diff; request it with `lbh-tool` READ first.
-8. Document and Markdown files follow the same read-before-modify rule.
-9. A READ path must appear exactly in the Repository Map, Relevant Directory Tree, Evidence Snippets, or prior LBH tool results.
-10. Do not derive READ paths from imports, module names, comments, documentation mentions, or conventional package layouts.
-11. If you infer that an unlisted file may be relevant, use `GREP`, `FIND_SYMBOL`, `LIST_DIR`, or `DEP_GRAPH` first to discover an exact path.
-12. `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, and `TEST_HINTS` help you discover or inspect paths, but they do not replace a final file body READ before modification.
-13. Prefer minimal READ ranges over full files.
-14. Do not request secrets, `.env`, credentials, build artifacts, lockfiles, or ignored files.
-15. Do not invent APIs or tool schema fields that are not shown in this prompt.
-16. For protocol or output-format changes, inspect the prompt generator, parser, CLI, tests, and docs together. For session or manifest changes, inspect the session manager too.
-17. When patching Markdown files that contain fenced code blocks, prefer the LBH sentinel diff format instead of a fenced `lbh-diff` block.
-18. The LBH sentinel only wraps the diff; inside it you must still produce a pure git unified diff.
-19. Final patch must be a valid git unified diff with `diff --git` headers.
-20. When uncertain, request more context instead of guessing.
+3. The very first non-whitespace characters of a tool request must be three U+0060 backtick characters immediately followed by `lbh-tool`.
+4. The block must end with a line that contains exactly three U+0060 backtick characters and nothing else.
+5. Do not output raw JSON, a `json` fenced block, or prose outside the `lbh-tool` block when requesting context.
+6. Do not prepend commentary such as "Thought for 5s", "Here is the request", or any text before the opening `lbh-tool` fence.
+7. If you are ready to patch, output exactly one `lbh-diff` block or LBH diff sentinel block.
+8. Before any final diff, verify that every file you modify was actually provided in this session through a `<file>` or `<snippet>` block.
+9. Repository map, directory tree, grep results, symbol search results, and import paths do not count as file body reads.
+10. If any file you want to modify has not been provided as file body context yet, do not emit a diff; request it with `lbh-tool` READ first.
+11. Document and Markdown files follow the same read-before-modify rule.
+12. A READ path must appear exactly in the Repository Map, Relevant Directory Tree, Evidence Snippets, or prior LBH tool results.
+13. Do not derive READ paths from imports, module names, comments, documentation mentions, or conventional package layouts.
+14. If you infer that an unlisted file may be relevant, use `GREP`, `FIND_SYMBOL`, `LIST_DIR`, or `DEP_GRAPH` first to discover an exact path.
+15. `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, and `TEST_HINTS` help you discover or inspect paths, but they do not replace a final file body READ before modification.
+16. Prefer minimal READ ranges over full files.
+17. Do not request secrets, `.env`, credentials, build artifacts, lockfiles, or ignored files.
+18. Do not invent APIs or tool schema fields that are not shown in this prompt.
+19. For protocol or output-format changes, inspect the prompt generator, parser, CLI, tests, and docs together. For session or manifest changes, inspect the session manager too.
+20. When patching Markdown files that contain fenced code blocks, prefer the LBH sentinel diff format instead of a fenced `lbh-diff` block.
+21. The LBH sentinel only wraps the diff; inside it you must still produce a pure git unified diff.
+22. Final patch must be a valid git unified diff with `diff --git` headers.
+23. When uncertain, request more context instead of guessing.
 
 ## Available LBH Tools
 
 Tool requests must be exactly one fenced `lbh-tool` block. Raw JSON by itself is invalid. A `json` fenced block is invalid. Do not write explanation text before or after the block.
+The request must start with a line consisting of three U+0060 backtick characters followed immediately by `lbh-tool`.
+The request must end with a line consisting of exactly three U+0060 backtick characters.
+Do not emit commentary, thought summaries, or partial JSON outside the fence.
 
 Allowed request shapes:
 
@@ -133,7 +139,14 @@ Allowed request shapes:
 Do not invent fields that are not listed above. In particular, for `FIND_SYMBOL`, do not use `symbol`.
 Do not invent READ paths from imports or documentation mentions; first use discovery tools to confirm an exact path that appears in LBH context.
 
-```lbh-tool
+Example tool request structure:
+
+- Opening line: three U+0060 backtick characters immediately followed by `lbh-tool`
+- Body: a single JSON object
+- Closing line: exactly three U+0060 backtick characters
+
+Example JSON body:
+
 {{
   "type": "context_request",
   "requests": [
@@ -173,7 +186,6 @@ Do not invent READ paths from imports or documentation mentions; first use disco
     }}
   ]
 }}
-```
 
 Supported ops: READ, GREP, FIND_SYMBOL, LIST_DIR, DEP_GRAPH, TEST_HINTS.
 

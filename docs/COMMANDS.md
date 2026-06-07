@@ -153,3 +153,21 @@ lbh doctor
 - index DB 존재
 - git 사용 가능 여부
 - SQLite 상태
+
+## `lbh gateway-run`
+
+`CatGPT-Gateway` thread API를 사용해 수동 prompt/response 교환을 자동화합니다.
+
+```bash
+lbh gateway-run "결제 실패 시 알림이 누락되는 문제를 수정"
+lbh gateway-run "payment notification bug" --base-url http://localhost:8000 --api-key dummy123 --check
+```
+
+동작:
+
+- `lbh ask`와 같은 방식으로 session과 `initial_prompt.md`를 생성합니다.
+- `POST /thread/new`로 첫 prompt를 전송합니다.
+- 응답을 `response_001.md`로 저장한 뒤 `lbh respond`와 같은 파이프라인으로 처리합니다.
+- `context_append_###.md` 또는 repair prompt가 생기면 같은 `thread_id`로 다시 보냅니다.
+- `patch.diff`가 준비되면 중단합니다.
+- `--check`를 주면 마지막에 `git apply --check`까지 실행합니다.

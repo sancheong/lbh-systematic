@@ -12,6 +12,7 @@ from lbh.automation import AutomationOptions, AutomationRunner, ShellBrowserCont
 from lbh.core.config import Config, init_config
 from lbh.core.fs import format_numbered_lines, read_text, redact_secrets
 from lbh.core.paths import find_repo_root, index_dir, resolve_repo_path
+from lbh.gateway_loop import run_gateway_loop
 from lbh.indexer.builder import RepoIndexer
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
@@ -34,7 +35,9 @@ def cmd_index(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(stats, ensure_ascii=False, indent=2))
     else:
-        print(f"Indexed {stats['files']} files, {stats['symbols']} symbols, {stats['imports']} imports, {stats['edges']} edges in {stats['elapsed_ms']}ms")
+        print(
+            f"Indexed {stats['files']} files, {stats['symbols']} symbols, {stats['imports']} imports, {stats['edges']} edges in {stats['elapsed_ms']}ms"
+        )
     return 0
 
 
@@ -98,6 +101,32 @@ def cmd_respond(args: argparse.Namespace) -> int:
 
     print(outcome.error_message or "No lbh-tool request or diff found in response.", file=sys.stderr)
     return outcome.return_code
+
+
+def cmd_gateway_run(args: argparse.Namespace) -> int:
+    repo = find_repo_root()
+    ensure_index(repo)
+    result = run_gateway_loop(
+        repo,
+        request=args.request,
+        base_url=args.base_url,
+        api_key=args.api_key,
+        max_rounds=args.max_rounds,
+        limit=args.limit,
+        apply_check=args.check,
+    )
+    print(f"Session: {result.session_root}")
+    if result.response_file:
+        print(f"Last response: {result.response_file}")
+    if result.patch_file:
+        print(f"Patch: {result.patch_file}")
+    if result.message:
+        print(result.message)
+    if result.status == "patch_ready":
+        print("Gateway loop reached patch-ready state.")
+        return 0
+    print(f"Gateway loop stopped with status: {result.status}", file=sys.stderr)
+    return 4
 
 
 def cmd_read(args: argparse.Namespace) -> int:
@@ -174,7 +203,12 @@ def cmd_automate(args: argparse.Namespace) -> int:
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
         controller_kind="shell_command",
-        controller_command=tuple(shlex.split(args.controller_command or os.environ.get("LBH_BROWSER_CONTROLLER_COMMAND", ""), posix=False)),
+        controller_command=tuple(
+            shlex.split(
+                args.controller_command or os.environ.get("LBH_BROWSER_CONTROLLER_COMMAND", ""),
+                posix=False,
+            )
+        ),
     )
     runner = AutomationRunner(repo, controller, options)
     if args.session:
@@ -221,6 +255,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"index: {'ok' if db_exists else 'missing'}")
     try:
         import sqlite3
+
         print(f"sqlite: ok {sqlite3.sqlite_version}")
     except Exception as exc:
         print(f"sqlite: error {exc}")
@@ -285,6 +320,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("doctor", help="check LBH project health")
     sp.set_defaults(func=cmd_doctor)
+
+    sp = sub.add_parser("gateway-run", help="run the manual prompt/response loop through CatGPT-Gateway")
+    sp.add_argument("request")
+    sp.add_argument("--base-url", default="http://localhost:8000")
+    sp.add_argument("--api-key", default="dummy123")
+    sp.add_argument("--limit", type=int, default=None)
+    sp.add_argument("--max-rounds", type=int, default=8)
+    sp.add_argument("--check", action="store_true", help="run git apply --check when patch.diff is ready")
+    sp.set_defaults(func=cmd_gateway_run)
     return p
 
 
