@@ -103,6 +103,19 @@ def format_numbered_lines(text: str, start: int = 1, end: int | None = None) -> 
     return "\n".join(f"{num:>{width}} | {line}" for num, line in selected)
 
 
+def short_line_hash(line: str) -> str:
+    return hashlib.sha1(line.encode("utf-8")).hexdigest()[:6]
+
+
+def format_hashline_lines(text: str, start: int = 1, end: int | None = None) -> str:
+    lines = text.splitlines()
+    if end is None:
+        end = len(lines)
+    selected = line_slice(text, start, end)
+    width = len(str(end))
+    return "\n".join(f"{num:>{width}}#{short_line_hash(line)} | {line}" for num, line in selected)
+
+
 def classify_layer(path: str) -> str:
     p = path.lower()
     if any(x in p for x in ["test", "spec", "__tests__"]):

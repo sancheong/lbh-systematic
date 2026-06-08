@@ -1,4 +1,10 @@
-from lbh.protocol.parser import extract_diff, parse_tool_requests, strip_diff_payloads
+from lbh.protocol.parser import (
+    extract_diff,
+    extract_hashline_patch,
+    parse_tool_requests,
+    strip_diff_payloads,
+    strip_hashline_patch_payloads,
+)
 
 
 def test_parse_legacy_read():
@@ -153,6 +159,52 @@ diff --git a/a.py b/a.py
     assert diff is not None
     assert diff.startswith("diff --git")
     assert "+new" in diff
+
+
+def test_extract_hashline_patch():
+    raw = """```lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 2,
+      "end_hash": "d4e5f6",
+      "old": "def foo():\\n    pass",
+      "new": "def foo():\\n    return 1"
+    }
+  ]
+}
+```"""
+    edits = extract_hashline_patch(raw)
+    assert edits is not None
+    assert len(edits) == 1
+    assert edits[0].path == "src/foo.py"
+    assert edits[0].start_hash == "a1b2c3"
+    assert edits[0].new == "def foo():\n    return 1"
+
+
+def test_strip_hashline_patch_payloads_removes_legacy_read_examples_inside_patch():
+    raw = """```lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 1,
+      "end_hash": "a1b2c3",
+      "old": "[READ: src/example.py#1-2]",
+      "new": "value"
+    }
+  ]
+}
+```"""
+    stripped = strip_hashline_patch_payloads(raw)
+    assert stripped.strip() == ""
 
 
 def test_strip_diff_payloads_with_literal_sentinel_text_inside_hunk():

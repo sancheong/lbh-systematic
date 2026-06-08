@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from lbh.core.config import Config
-from lbh.core.fs import format_numbered_lines, read_text, redact_secrets, sha256_file
+from lbh.core.fs import format_hashline_lines, read_text, redact_secrets, sha256_file
 from lbh.core.models import RankedFile
 from lbh.core.paths import index_dir
 from lbh.indexer.store import IndexStore
@@ -79,8 +79,11 @@ class ContextPacker:
                 text = redact_secrets(text)
             lines = text.splitlines()
             end = min(len(lines), self.config.snippet_lines)
-            numbered = format_numbered_lines(text, 1, end)
-            chunks.append(f'<snippet path="{rf.path}" sha256="{sha256_file(path)}" lines="1-{end}">\n{numbered}\n</snippet>')
+            numbered = format_hashline_lines(text, 1, end)
+            chunks.append(
+                f'<snippet path="{rf.path}" sha256="{sha256_file(path)}" lines="1-{end}" line_format="hashline">'
+                f"\n{numbered}\n</snippet>"
+            )
         return "\n\n".join(chunks)
 
     def build_initial_prompt(self, user_request: str, ranked: list[RankedFile]) -> str:
@@ -102,7 +105,7 @@ You must work only from the context provided by LBH.
 4. The block must end with a line that contains exactly three U+0060 backtick characters and nothing else.
 5. Do not output raw JSON, a `json` fenced block, or prose outside the `lbh-tool` block when requesting context.
 6. Do not prepend commentary such as "Thought for 5s", "Here is the request", or any text before the opening `lbh-tool` fence.
-7. If you are ready to patch, output exactly one `lbh-diff` block or LBH diff sentinel block.
+7. If you are ready to patch, prefer exactly one `lbh-hashline-patch` block. Use `lbh-diff` only as fallback when a hashline patch cannot express the change.
 8. Before any final diff, verify that every file you modify was actually provided in this session through a `<file>` or `<snippet>` block.
 9. Repository map, directory tree, grep results, symbol search results, and import paths do not count as file body reads.
 10. If any file you want to modify has not been provided as file body context yet, do not emit a diff; request it with `lbh-tool` READ first.
@@ -192,6 +195,42 @@ Supported ops: READ, GREP, FIND_SYMBOL, LIST_DIR, DEP_GRAPH, TEST_HINTS.
 Legacy shorthand is also accepted: `[READ: path]` or `[READ: path#start-end]`.
 
 ## Final Patch Format
+
+Preferred final patch mode is a fenced `lbh-hashline-patch` block.
+
+When LBH provides `<file ... line_format="hashline">` or `<snippet ... line_format="hashline">`, each line is formatted as:
+
+- `<line-number>#<6-hex-content-hash> | <line text>`
+
+Use those anchors in the final patch.
+
+Preferred hashline patch structure:
+
+```lbh-hashline-patch
+{{
+  "type": "hashline_patch",
+  "edits": [
+    {{
+      "path": "relative/path/from/repo",
+      "start_line": 10,
+      "start_hash": "a1b2c3",
+      "end_line": 12,
+      "end_hash": "d4e5f6",
+      "old": "old block text exactly as provided",
+      "new": "replacement block text"
+    }}
+  ]
+}}
+```
+
+Rules for `lbh-hashline-patch`:
+
+- Output exactly one fenced `lbh-hashline-patch` block and nothing else.
+- `old` must exactly match the anchored source block text as provided in LBH context.
+- `new` must be the full replacement block text.
+- Prefer a small number of precise block replacements over whole-file rewrites.
+- Do not invent hashes or line numbers; copy them exactly from LBH context.
+- If a file has not been provided as `<file>` or `<snippet>` body context yet, request it with `lbh-tool` READ instead of emitting a patch.
 
 Preflight before emitting any final diff:
 

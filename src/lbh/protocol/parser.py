@@ -4,13 +4,14 @@ import json
 import re
 from typing import Any
 
-from lbh.core.models import ReadRange, ToolRequest
+from lbh.core.models import HashLinePatchEdit, ReadRange, ToolRequest
 from lbh.core.paths import normalize_relpath
 
 FENCE_RE = re.compile(r"(?ms)^```(?!`)([^\n]*)\n(.*?)^```(?!`)[ \t]*$")
 LEGACY_READ_RE = re.compile(r"\[READ:\s*([^\]#\s]+)(?:#(\d+)-(\d+))?\s*\]")
 SENTINEL_DIFF_RE = re.compile(r"(?ms)^<<<LBH_DIFF_BEGIN[^>\n]*>>>[ \t]*\n(.*?)^<<<LBH_DIFF_END>>>[ \t]*$")
 TOP_LEVEL_DIFF_FENCE_RE = re.compile(r"(?ms)^```(?!`)(?:lbh-diff|diff)(?:[^\n]*)\n.*?^```(?!`)[ \t]*$")
+TOP_LEVEL_HASHLINE_PATCH_FENCE_RE = re.compile(r"(?ms)^```(?!`)lbh-hashline-patch(?:[^\n]*)\n.*?^```(?!`)[ \t]*$")
 
 
 def _parse_ranges(value: Any) -> list[ReadRange]:
@@ -40,6 +41,45 @@ def strip_diff_payloads(raw: str) -> str:
     if stripped.startswith("diff --git "):
         return ""
     return without_diff_fences
+
+
+def strip_hashline_patch_payloads(raw: str) -> str:
+    return TOP_LEVEL_HASHLINE_PATCH_FENCE_RE.sub("", raw)
+
+
+def extract_hashline_patch(raw: str) -> list[HashLinePatchEdit] | None:
+    blocks: list[dict[str, Any]] = []
+    for lang, body in FENCE_RE.findall(raw):
+        if _normalize_fence_lang(lang) != "lbh-hashline-patch":
+            continue
+        blocks.append(json.loads(body.strip()))
+
+    if not blocks:
+        return None
+    if len(blocks) > 1:
+        raise ValueError("multiple lbh-hashline-patch blocks found")
+
+    data = blocks[0]
+    edits_raw = data.get("edits", [])
+    if not isinstance(edits_raw, list):
+        raise ValueError("lbh-hashline-patch edits must be a list")
+
+    edits: list[HashLinePatchEdit] = []
+    for item in edits_raw:
+        if not isinstance(item, dict):
+            raise ValueError("lbh-hashline-patch edit items must be objects")
+        edits.append(
+            HashLinePatchEdit(
+                path=normalize_relpath(str(item.get("path", ""))),
+                start_line=int(item.get("start_line", 0)),
+                start_hash=str(item.get("start_hash", "")),
+                end_line=int(item.get("end_line", 0)),
+                end_hash=str(item.get("end_hash", "")),
+                old=str(item.get("old", "")),
+                new=str(item.get("new", "")),
+            )
+        )
+    return edits
 
 
 def parse_tool_requests(raw: str) -> list[ToolRequest]:

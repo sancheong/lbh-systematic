@@ -72,6 +72,17 @@ class ToolRequest:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class HashLinePatchEdit:
+    path: str
+    start_line: int
+    start_hash: str
+    end_line: int
+    end_hash: str
+    old: str
+    new: str
+
+
 @dataclass
 class DiffValidationResult:
     ok: bool

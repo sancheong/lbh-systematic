@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from lbh.core.config import Config
-from lbh.core.fs import format_numbered_lines, read_text, redact_secrets, sha256_file
+from lbh.core.fs import format_hashline_lines, read_text, redact_secrets, sha256_file
 from lbh.core.models import ReadRange, ToolRequest
 from lbh.core.paths import resolve_repo_path, to_repo_rel
 from lbh.indexer.store import IndexStore
@@ -64,8 +64,11 @@ class ToolExecutor:
             end = min(total, rr.end)
             if end - start + 1 > self.config.max_lazy_read_lines:
                 end = start + self.config.max_lazy_read_lines - 1
-            numbered = format_numbered_lines(text, start, end)
-            blocks.append(f'<file path="{req.path}" sha256="{sha256_file(path)}" lines="{start}-{end}">\n{numbered}\n</file>')
+            numbered = format_hashline_lines(text, start, end)
+            blocks.append(
+                f'<file path="{req.path}" sha256="{sha256_file(path)}" lines="{start}-{end}" line_format="hashline">'
+                f"\n{numbered}\n</file>"
+            )
             registered_ranges.append({"start": start, "end": end})
         self.sessions.register_read_file(self.session_root, req.path, sha256_file(path), registered_ranges)
         return "\n\n".join(blocks)

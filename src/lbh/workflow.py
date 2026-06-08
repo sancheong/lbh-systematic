@@ -16,7 +16,14 @@ from lbh.patch.candidate import (
     validate_candidate,
 )
 from lbh.patch.diff import validate_diff
-from lbh.protocol.parser import extract_diff, parse_tool_requests, strip_diff_payloads
+from lbh.patch.hashline import HashLinePatchError, materialize_hashline_patch
+from lbh.protocol.parser import (
+    extract_diff,
+    extract_hashline_patch,
+    parse_tool_requests,
+    strip_diff_payloads,
+    strip_hashline_patch_payloads,
+)
 from lbh.protocol.tools import ToolExecutor
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
@@ -92,14 +99,16 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
     manager.append_event(session_root, {"type": "model_response", "file": str(response_file)})
 
     diff = extract_diff(raw)
-    non_diff_raw = strip_diff_payloads(raw)
+    hashline_patch = extract_hashline_patch(raw)
+    non_diff_raw = strip_hashline_patch_payloads(strip_diff_payloads(raw))
     requests = parse_tool_requests(non_diff_raw)
 
-    if requests and diff:
+    kinds = sum(1 for item in (requests, diff, hashline_patch) if item)
+    if kinds > 1:
         return ResponseOutcome(
             kind="error",
             return_code=2,
-            error_message="Response contains both tool requests and diff. Please provide only one kind of response.",
+            error_message="Response contains multiple output modes. Please provide only one of lbh-tool, lbh-hashline-patch, or diff.",
         )
 
     if requests:
@@ -109,6 +118,13 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
         out.write_text(append_text, encoding="utf-8")
         manager.append_event(session_root, {"type": "context_append", "file": out.name, "request_count": len(requests)})
         return ResponseOutcome(kind="context_append", return_code=0, context_append=out)
+
+    if hashline_patch:
+        try:
+            materialized = materialize_hashline_patch(repo, hashline_patch)
+            diff = materialized.diff
+        except HashLinePatchError as exc:
+            return ResponseOutcome(kind="error", return_code=2, error_message=str(exc))
 
     if diff:
         manifest = manager.load_manifest(session_root)
@@ -174,7 +190,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
     return ResponseOutcome(
         kind="none",
         return_code=1,
-        error_message="No lbh-tool request or diff found in response.",
+        error_message="No lbh-tool request, lbh-hashline-patch, or diff found in response.",
     )
 
 
