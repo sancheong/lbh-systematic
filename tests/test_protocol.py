@@ -172,7 +172,6 @@ def test_extract_hashline_patch():
       "start_hash": "a1b2c3",
       "end_line": 2,
       "end_hash": "d4e5f6",
-      "old": "def foo():\\n    pass",
       "new": "def foo():\\n    return 1"
     }
   ]
@@ -183,7 +182,30 @@ def test_extract_hashline_patch():
     assert len(edits) == 1
     assert edits[0].path == "src/foo.py"
     assert edits[0].start_hash == "a1b2c3"
+    assert edits[0].old == ""
     assert edits[0].new == "def foo():\n    return 1"
+
+
+def test_extract_hashline_patch_with_optional_block_hash():
+    raw = """```lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 2,
+      "end_hash": "d4e5f6",
+      "block_hash": "0123456789ab",
+      "new": "def foo():\\n    return 1"
+    }
+  ]
+}
+```"""
+    edits = extract_hashline_patch(raw)
+    assert edits is not None
+    assert edits[0].block_hash == "0123456789ab"
 
 
 def test_strip_hashline_patch_payloads_removes_legacy_read_examples_inside_patch():

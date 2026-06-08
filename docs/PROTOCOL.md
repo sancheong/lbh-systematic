@@ -96,7 +96,6 @@ Preferred final patch mode:
       "start_hash": "a1b2c3",
       "end_line": 2,
       "end_hash": "d4e5f6",
-      "old": "def foo():\n    pass",
       "new": "def foo():\n    return 1"
     }
   ]
@@ -106,8 +105,10 @@ Preferred final patch mode:
 Rules:
 
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
-- `old` must exactly match the anchored source block as provided by LBH context.
 - `new` must be the full replacement block text.
+- Use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- Do not retype the full `old` source block unless LBH explicitly asks for it.
+- `block_hash` is optional extra verification when LBH context explicitly provides it.
 - Prefer a small number of precise block replacements over whole-file rewrites.
 - Do not emit overlapping `edits` for the same file.
 - If one conceptual change renumbers or rewrites adjacent lines, emit one larger replacement block instead of multiple overlapping edits.

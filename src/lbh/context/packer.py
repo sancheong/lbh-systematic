@@ -216,7 +216,6 @@ Preferred hashline patch structure:
       "start_hash": "a1b2c3",
       "end_line": 12,
       "end_hash": "d4e5f6",
-      "old": "old block text exactly as provided",
       "new": "replacement block text"
     }}
   ]
@@ -226,8 +225,10 @@ Preferred hashline patch structure:
 Rules for `lbh-hashline-patch`:
 
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
-- `old` must exactly match the anchored source block text as provided in LBH context.
 - `new` must be the full replacement block text.
+- Use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- Do not retype the full `old` source block unless LBH explicitly asks for it.
+- `block_hash` is optional extra verification when LBH context explicitly provides it.
 - Prefer a small number of precise block replacements over whole-file rewrites.
 - Do not emit overlapping `edits` for the same file.
 - If a renumbering or paragraph/list rewrite affects adjacent lines, emit one larger replacement block instead of multiple overlapping edits.

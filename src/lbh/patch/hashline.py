@@ -4,7 +4,7 @@ import difflib
 from dataclasses import dataclass
 from pathlib import Path
 
-from lbh.core.fs import read_text, short_line_hash
+from lbh.core.fs import read_text, short_block_hash, short_line_hash
 from lbh.core.models import HashLinePatchEdit
 from lbh.core.paths import normalize_relpath, resolve_repo_path
 
@@ -33,8 +33,9 @@ def materialize_hashline_patch(repo_root: Path, edits: list[HashLinePatchEdit]) 
                 start_hash=edit.start_hash,
                 end_line=edit.end_line,
                 end_hash=edit.end_hash,
-                old=edit.old,
                 new=edit.new,
+                block_hash=edit.block_hash,
+                old=edit.old,
             )
         )
 
@@ -105,7 +106,12 @@ def _validate_edit(current_lines: list[str], edit: HashLinePatchEdit) -> None:
         )
 
     current_block = "\n".join(current_lines[edit.start_line - 1 : edit.end_line])
-    if current_block != edit.old:
+    if edit.block_hash and short_block_hash(current_block) != edit.block_hash:
+        raise HashLinePatchError(
+            f"block hash mismatch for {edit.path}:{edit.start_line}-{edit.end_line} expected {edit.block_hash}"
+        )
+
+    if edit.old and current_block != edit.old:
         raise HashLinePatchError(
             f"old text mismatch for {edit.path}:{edit.start_line}-{edit.end_line}"
         )

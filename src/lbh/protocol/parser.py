@@ -83,8 +83,9 @@ def extract_hashline_patch(raw: str) -> list[HashLinePatchEdit] | None:
                 start_hash=str(item.get("start_hash", "")),
                 end_line=int(item.get("end_line", 0)),
                 end_hash=str(item.get("end_hash", "")),
-                old=str(item.get("old", "")),
                 new=str(item.get("new", "")),
+                block_hash=str(item.get("block_hash", "")),
+                old=str(item.get("old", "")),
             )
         )
     return edits

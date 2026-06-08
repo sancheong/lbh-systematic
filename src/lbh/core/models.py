@@ -79,8 +79,9 @@ class HashLinePatchEdit:
     start_hash: str
     end_line: int
     end_hash: str
-    old: str
     new: str
+    block_hash: str = ""
+    old: str = ""
 
 
 @dataclass

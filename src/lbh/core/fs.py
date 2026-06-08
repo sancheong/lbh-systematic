@@ -112,6 +112,10 @@ def short_line_hash(line: str) -> str:
     return hashlib.sha1(line.encode("utf-8")).hexdigest()[:6]
 
 
+def short_block_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
 def format_hashline_lines(text: str, start: int = 1, end: int | None = None) -> str:
     lines = text.splitlines()
     if end is None:
