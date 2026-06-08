@@ -131,6 +131,7 @@ class CandidateIssue:
 class CandidateValidation:
     candidate: str
     ok: bool
+    source_mode: str = "diff"
     promoted_to_patch: bool = False
     errors: list[CandidateIssue] = field(default_factory=list)
     warnings: list[CandidateIssue] = field(default_factory=list)
@@ -144,6 +145,7 @@ class CandidateValidation:
         return {
             "candidate": self.candidate,
             "ok": self.ok,
+            "source_mode": self.source_mode,
             "promoted_to_patch": self.promoted_to_patch,
             "errors": [item.to_dict() for item in self.errors],
             "warnings": [item.to_dict() for item in self.warnings],

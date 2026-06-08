@@ -100,6 +100,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
 
     diff = extract_diff(raw)
     hashline_patch = extract_hashline_patch(raw)
+    source_mode = "diff"
     non_diff_raw = strip_hashline_patch_payloads(strip_diff_payloads(raw))
     requests = parse_tool_requests(non_diff_raw)
 
@@ -123,6 +124,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
         try:
             materialized = materialize_hashline_patch(repo, hashline_patch)
             diff = materialized.diff
+            source_mode = "hashline"
         except HashLinePatchError as exc:
             return ResponseOutcome(kind="error", return_code=2, error_message=str(exc))
 
@@ -142,6 +144,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
             repo_root=repo,
             config=config,
             read_files=manifest.get("read_files", {}),
+            source_mode=source_mode,
         )
 
         manifest["latest_candidate"] = candidate_rel

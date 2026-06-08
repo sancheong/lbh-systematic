@@ -53,11 +53,13 @@ def validate_candidate(
     repo_root: Path,
     config: Config,
     read_files: dict[str, object],
+    source_mode: str = "diff",
 ) -> CandidateValidation:
     diff_validation = validate_diff(diff, repo_root, config, read_files=read_files)
     validation = CandidateValidation(
         candidate=candidate,
         ok=False,
+        source_mode=source_mode,
         modified_files=list(diff_validation.modified_files),
         new_files=list(diff_validation.new_files),
         deleted_files=list(diff_validation.deleted_files),
@@ -143,6 +145,16 @@ def render_repair_prompt(validation: CandidateValidation) -> str:
         f"`{validation.candidate}`",
         "",
     ]
+    if validation.source_mode == "hashline":
+        lines.extend(
+            [
+                "Original source mode:",
+                "`lbh-hashline-patch`",
+                "",
+                "Keep the repaired output in `lbh-hashline-patch` mode. Do not fall back to a unified diff response.",
+                "",
+            ]
+        )
     if validation.errors:
         lines.append("Blocking failures:")
         for i, issue in enumerate(validation.errors, start=1):
@@ -199,6 +211,8 @@ def _preserve_notes(raw_response: str) -> list[str]:
         notes.append("Keep the candidate's use of the LBH diff sentinel wrapper where valid.")
     if "````text" in raw_response or "`````text" in raw_response:
         notes.append("Keep the code-fenced diff transport wrapper where valid.")
+    if "lbh-hashline-patch" in raw_response:
+        notes.append("Preserve the `lbh-hashline-patch` output mode where valid.")
     notes.append("Preserve any hunks that already satisfy unified diff syntax and read-before-modify rules.")
     return notes
 
@@ -213,7 +227,14 @@ def _repair_instructions(validation: CandidateValidation) -> list[str]:
         elif issue.kind == "diff_validation_failed":
             _push(instructions, seen, issue.message)
         elif issue.kind == "apply_check_failed":
-            _push(instructions, seen, "Make the patch pass `git apply --check`.")
+            if validation.source_mode == "hashline":
+                _push(
+                    instructions,
+                    seen,
+                    "Make the deterministic materialized diff pass `git apply --check`.",
+                )
+            else:
+                _push(instructions, seen, "Make the patch pass `git apply --check`.")
 
     for issue in validation.warnings:
         if issue.kind == "markdown_bullet_suspected":
@@ -224,7 +245,10 @@ def _repair_instructions(validation: CandidateValidation) -> list[str]:
             _push(instructions, seen, "`diff --git` headers must start at column 1.")
 
     _push(instructions, seen, "Preserve correct parts of the candidate.")
-    _push(instructions, seen, "Produce a valid git unified diff.")
+    if validation.source_mode == "hashline":
+        _push(instructions, seen, "Produce exactly one fenced `lbh-hashline-patch` block.")
+    else:
+        _push(instructions, seen, "Produce a valid git unified diff.")
     return instructions
 
 
