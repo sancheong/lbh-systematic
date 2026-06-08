@@ -326,7 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--base-url", default="http://localhost:8000")
     sp.add_argument("--api-key", default="dummy123")
     sp.add_argument("--limit", type=int, default=None)
-    sp.add_argument("--max-rounds", type=int, default=8)
+    sp.add_argument("--max-rounds", type=int, default=20)
     sp.add_argument("--check", action="store_true", help="run git apply --check when patch.diff is ready")
     sp.set_defaults(func=cmd_gateway_run)
     return p

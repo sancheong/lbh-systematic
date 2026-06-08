@@ -207,6 +207,51 @@ def test_strip_hashline_patch_payloads_removes_legacy_read_examples_inside_patch
     assert stripped.strip() == ""
 
 
+def test_extract_hashline_patch_from_six_backtick_wrapper():
+    raw = """``````lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 1,
+      "end_hash": "a1b2c3",
+      "old": "value",
+      "new": "updated"
+    }
+  ]
+}
+``````"""
+    edits = extract_hashline_patch(raw)
+    assert edits is not None
+    assert len(edits) == 1
+    assert edits[0].path == "src/foo.py"
+    assert edits[0].new == "updated"
+
+
+def test_strip_hashline_patch_payloads_with_six_backticks():
+    raw = """``````lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 1,
+      "end_hash": "a1b2c3",
+      "old": "[READ: src/example.py#1-2]",
+      "new": "value"
+    }
+  ]
+}
+``````"""
+    stripped = strip_hashline_patch_payloads(raw)
+    assert stripped.strip() == ""
+
+
 def test_strip_diff_payloads_with_literal_sentinel_text_inside_hunk():
     raw = """`````text
 <<<LBH_DIFF_BEGIN schema="lbh.diff.v1">>>

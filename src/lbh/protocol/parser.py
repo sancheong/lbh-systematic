@@ -11,7 +11,8 @@ FENCE_RE = re.compile(r"(?ms)^```(?!`)([^\n]*)\n(.*?)^```(?!`)[ \t]*$")
 LEGACY_READ_RE = re.compile(r"\[READ:\s*([^\]#\s]+)(?:#(\d+)-(\d+))?\s*\]")
 SENTINEL_DIFF_RE = re.compile(r"(?ms)^<<<LBH_DIFF_BEGIN[^>\n]*>>>[ \t]*\n(.*?)^<<<LBH_DIFF_END>>>[ \t]*$")
 TOP_LEVEL_DIFF_FENCE_RE = re.compile(r"(?ms)^```(?!`)(?:lbh-diff|diff)(?:[^\n]*)\n.*?^```(?!`)[ \t]*$")
-TOP_LEVEL_HASHLINE_PATCH_FENCE_RE = re.compile(r"(?ms)^```(?!`)lbh-hashline-patch(?:[^\n]*)\n.*?^```(?!`)[ \t]*$")
+VARIABLE_FENCE_RE = re.compile(r"(?ms)^(`{3,})([^\n]*)\n(.*?)^\1[ \t]*$")
+TOP_LEVEL_HASHLINE_PATCH_FENCE_RE = re.compile(r"(?ms)^(`{3,})lbh-hashline-patch(?:[^\n]*)\n.*?^\1[ \t]*$")
 
 
 def _parse_ranges(value: Any) -> list[ReadRange]:
@@ -34,6 +35,13 @@ def _normalize_fence_lang(info: str | None) -> str:
     return stripped.split()[0].lower()
 
 
+def _iter_variable_fences(raw: str) -> list[tuple[str, str]]:
+    fences: list[tuple[str, str]] = []
+    for _delim, info, body in VARIABLE_FENCE_RE.findall(raw):
+        fences.append((info, body))
+    return fences
+
+
 def strip_diff_payloads(raw: str) -> str:
     without_sentinels = SENTINEL_DIFF_RE.sub("", raw)
     without_diff_fences = TOP_LEVEL_DIFF_FENCE_RE.sub("", without_sentinels)
@@ -49,7 +57,7 @@ def strip_hashline_patch_payloads(raw: str) -> str:
 
 def extract_hashline_patch(raw: str) -> list[HashLinePatchEdit] | None:
     blocks: list[dict[str, Any]] = []
-    for lang, body in FENCE_RE.findall(raw):
+    for lang, body in _iter_variable_fences(raw):
         if _normalize_fence_lang(lang) != "lbh-hashline-patch":
             continue
         blocks.append(json.loads(body.strip()))

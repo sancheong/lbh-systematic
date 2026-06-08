@@ -26,7 +26,7 @@ def run_gateway_loop(
     request: str,
     base_url: str,
     api_key: str = "dummy123",
-    max_rounds: int = 8,
+    max_rounds: int = 20,
     limit: int | None = None,
     apply_check: bool = False,
     transport: CatGptGatewayTransport | None = None,
