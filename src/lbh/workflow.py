@@ -16,7 +16,7 @@ from lbh.patch.candidate import (
     validate_candidate,
 )
 from lbh.patch.diff import validate_diff
-from lbh.protocol.parser import extract_diff, parse_tool_requests
+from lbh.protocol.parser import extract_diff, parse_tool_requests, strip_diff_payloads
 from lbh.protocol.tools import ToolExecutor
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
@@ -91,8 +91,9 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
     raw = response_file.read_text(encoding="utf-8")
     manager.append_event(session_root, {"type": "model_response", "file": str(response_file)})
 
-    requests = parse_tool_requests(raw)
     diff = extract_diff(raw)
+    non_diff_raw = strip_diff_payloads(raw)
+    requests = parse_tool_requests(non_diff_raw)
 
     if requests and diff:
         return ResponseOutcome(

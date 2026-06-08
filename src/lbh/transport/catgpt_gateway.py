@@ -17,7 +17,7 @@ class CatGptGatewayError(RuntimeError):
 class CatGptGatewayTransport:
     base_url: str
     api_key: str = "dummy123"
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = 300.0
 
     def start_session(self, initial_prompt: str) -> StartedSession:
         data = self._request_json("/thread/new", {"message": initial_prompt})

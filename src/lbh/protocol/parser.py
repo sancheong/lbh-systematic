@@ -7,9 +7,10 @@ from typing import Any
 from lbh.core.models import ReadRange, ToolRequest
 from lbh.core.paths import normalize_relpath
 
-FENCE_RE = re.compile(r"```([A-Za-z0-9_-]+)?\s*\n(.*?)```", re.S)
+FENCE_RE = re.compile(r"(?ms)^```(?!`)([^\n]*)\n(.*?)^```(?!`)[ \t]*$")
 LEGACY_READ_RE = re.compile(r"\[READ:\s*([^\]#\s]+)(?:#(\d+)-(\d+))?\s*\]")
-SENTINEL_DIFF_RE = re.compile(r"<<<LBH_DIFF_BEGIN[^>]*>>>\s*(.*?)\s*<<<LBH_DIFF_END>>>", re.S)
+SENTINEL_DIFF_RE = re.compile(r"(?ms)^<<<LBH_DIFF_BEGIN[^>\n]*>>>[ \t]*\n(.*?)^<<<LBH_DIFF_END>>>[ \t]*$")
+TOP_LEVEL_DIFF_FENCE_RE = re.compile(r"(?ms)^```(?!`)(?:lbh-diff|diff)(?:[^\n]*)\n.*?^```(?!`)[ \t]*$")
 
 
 def _parse_ranges(value: Any) -> list[ReadRange]:
@@ -23,11 +24,29 @@ def _parse_ranges(value: Any) -> list[ReadRange]:
     return ranges
 
 
+def _normalize_fence_lang(info: str | None) -> str:
+    if not info:
+        return ""
+    stripped = info.strip()
+    if not stripped:
+        return ""
+    return stripped.split()[0].lower()
+
+
+def strip_diff_payloads(raw: str) -> str:
+    without_sentinels = SENTINEL_DIFF_RE.sub("", raw)
+    without_diff_fences = TOP_LEVEL_DIFF_FENCE_RE.sub("", without_sentinels)
+    stripped = raw.strip()
+    if stripped.startswith("diff --git "):
+        return ""
+    return without_diff_fences
+
+
 def parse_tool_requests(raw: str) -> list[ToolRequest]:
     requests: list[ToolRequest] = []
 
     for lang, body in FENCE_RE.findall(raw):
-        if (lang or "").strip().lower() != "lbh-tool":
+        if _normalize_fence_lang(lang) != "lbh-tool":
             continue
         data = json.loads(body.strip())
         for item in data.get("requests", []):
@@ -71,7 +90,7 @@ def extract_diff(raw: str) -> str | None:
     lbh_blocks: list[str] = []
     diff_blocks: list[str] = []
     for lang, body in FENCE_RE.findall(raw):
-        normalized = (lang or "").strip().lower()
+        normalized = _normalize_fence_lang(lang)
         if normalized == "lbh-diff":
             lbh_blocks.append(body.strip())
         elif normalized == "diff":
