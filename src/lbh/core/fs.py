@@ -80,6 +80,11 @@ def read_text(path: Path, max_chars: int | None = None) -> str:
     return text
 
 
+def write_text_exact(path: Path, text: str, *, newline: str = "\n") -> None:
+    with path.open("w", encoding="utf-8", newline=newline) as f:
+        f.write(text)
+
+
 def redact_secrets(text: str) -> str:
     out = text
     for pat in SECRET_PATTERNS:

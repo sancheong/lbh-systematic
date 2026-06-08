@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lbh.context.packer import ContextPacker
 from lbh.core.config import Config
+from lbh.core.fs import write_text_exact
 from lbh.indexer.builder import RepoIndexer
 from lbh.patch.apply import git_apply, git_apply_check
 from lbh.patch.candidate import (
@@ -133,7 +134,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
         session_paths = manager.paths(session_root)
         candidate_index = next_candidate_index(session_root)
         paths = candidate_paths(session_root, candidate_index)
-        paths.diff.write_text(diff, encoding="utf-8")
+        write_text_exact(paths.diff, diff)
 
         candidate_rel = paths.diff.relative_to(session_root).as_posix()
         validation = validate_candidate(
@@ -150,7 +151,7 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
         manifest["latest_candidate"] = candidate_rel
         if validation.ok:
             validation.promoted_to_patch = True
-            session_paths.patch.write_text(diff, encoding="utf-8")
+            write_text_exact(session_paths.patch, diff)
             manifest["patch"] = {
                 "path": session_paths.patch.name,
                 "source_candidate": candidate_rel,

@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 
-from lbh.core.fs import format_hashline_lines, short_line_hash
+from lbh.core.fs import format_hashline_lines, short_line_hash, write_text_exact
 from lbh.core.models import HashLinePatchEdit
 from lbh.patch.hashline import HashLinePatchError, materialize_hashline_patch
 
@@ -36,7 +36,7 @@ def test_materialize_hashline_patch(tmp_path: Path):
 
     subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     patch_path = repo / "candidate.diff"
-    patch_path.write_text(materialized.diff, encoding="utf-8")
+    write_text_exact(patch_path, materialized.diff)
     proc = subprocess.run(
         ["git", "apply", "--check", str(patch_path)],
         cwd=repo,
@@ -69,3 +69,26 @@ def test_materialize_hashline_patch_rejects_stale_hash(tmp_path: Path):
         assert "start hash mismatch" in str(exc)
     else:
         raise AssertionError("expected HashLinePatchError")
+
+
+def test_write_text_exact_preserves_lf_for_materialized_diff(tmp_path: Path):
+    repo = tmp_path
+    path = repo / "sample.py"
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write("def foo():\n    pass\n")
+
+    edit = HashLinePatchEdit(
+        path="sample.py",
+        start_line=1,
+        start_hash=short_line_hash("def foo():"),
+        end_line=2,
+        end_hash=short_line_hash("    pass"),
+        old="def foo():\n    pass",
+        new='def foo():\n    return "ok"',
+    )
+
+    materialized = materialize_hashline_patch(repo, [edit])
+    patch_path = repo / "candidate.diff"
+    write_text_exact(patch_path, materialized.diff)
+    patch_bytes = patch_path.read_bytes()
+    assert b"\r\n" not in patch_bytes
