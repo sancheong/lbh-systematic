@@ -229,6 +229,8 @@ Rules for `lbh-hashline-patch`:
 - `old` must exactly match the anchored source block text as provided in LBH context.
 - `new` must be the full replacement block text.
 - Prefer a small number of precise block replacements over whole-file rewrites.
+- Do not emit overlapping `edits` for the same file.
+- If a renumbering or paragraph/list rewrite affects adjacent lines, emit one larger replacement block instead of multiple overlapping edits.
 - Do not invent hashes or line numbers; copy them exactly from LBH context.
 - If a file has not been provided as `<file>` or `<snippet>` body context yet, request it with `lbh-tool` READ instead of emitting a patch.
 

@@ -70,6 +70,9 @@ Preferred final patch mode:
 
 When LBH provides hashline-formatted context lines such as `12#a1b2c3 | code`, copy the line number and hash exactly into the patch plan.
 
+Do not emit overlapping `edits` for the same file.
+If one conceptual change renumbers or rewrites adjacent lines, emit one larger replacement block instead of multiple overlapping edits.
+
 Fallback diff mode:
 
 ```lbh-diff

@@ -109,6 +109,8 @@ Rules:
 - `old` must exactly match the anchored source block as provided by LBH context.
 - `new` must be the full replacement block text.
 - Prefer a small number of precise block replacements over whole-file rewrites.
+- Do not emit overlapping `edits` for the same file.
+- If one conceptual change renumbers or rewrites adjacent lines, emit one larger replacement block instead of multiple overlapping edits.
 - Do not invent line numbers or hashes.
 - If a target file was not provided as body context, request it first with `lbh-tool`.
 
