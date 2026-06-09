@@ -223,3 +223,16 @@ def apply_patch_file(
         return ApplyOutcome(ok=True, return_code=0, output="Not applying because --yes was not provided.")
     output = git_apply(repo, patch_path)
     return ApplyOutcome(ok=True, return_code=0, output=output.strip() or "Patch applied")
+
+
+def apply_patch_ready(
+    repo: Path,
+    patch_path: Path,
+    *,
+    session_root: Path | None = None,
+    skip_apply: bool = False,
+) -> ApplyOutcome:
+    check_outcome = apply_patch_file(repo, patch_path, session_root=session_root, check=True, yes=False)
+    if not check_outcome.ok or skip_apply:
+        return check_outcome
+    return apply_patch_file(repo, patch_path, session_root=session_root, check=False, yes=True)

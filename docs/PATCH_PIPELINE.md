@@ -11,7 +11,7 @@ When `lbh automate` is used, the patch pipeline is still the same deterministic 
    - `candidate_NNN.critique.md`
    - `candidate_NNN.repair_prompt.md`
 4. Only a fully valid candidate is promoted to `patch.diff`.
-5. The automation runtime then runs `lbh apply --check`, and optionally `lbh apply --yes`.
+5. Automation runtimes then run `lbh apply --check` and apply the patch by default; explicit skip-apply flags stop at patch-ready.
 
 If candidate validation fails, automation does not redesign the patch. It sends the generated repair prompt back to the same ChatGPT conversation and attempts a minimal repair round.
 
@@ -110,12 +110,14 @@ Markdown code fence가 들어 있는 문서를 수정할 때는 fenced `lbh-diff
 
 ## 적용 순서
 
-권장 흐름:
+권장 수동 흐름:
 
 ```bash
 lbh respond final.md --session .lbh/sessions/<id>
 lbh apply .lbh/sessions/<id>/patch.diff --check
 lbh apply .lbh/sessions/<id>/patch.diff --yes
 ```
+
+`lbh automate`와 `lbh gateway-run`은 patch-ready 이후 이 검증과 적용을 기본으로 자동 실행합니다. 자동 적용을 건너뛰려면 `--skip-apply`를 명시합니다.
 
 중요한 repo에서는 적용 전 branch/worktree를 따로 만들어 테스트하세요.

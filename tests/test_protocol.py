@@ -35,6 +35,16 @@ def test_parse_lbh_tool_with_info_string_attributes():
     assert reqs[0].path == "src"
 
 
+def test_parse_unfenced_lbh_tool_with_trailing_thought_text():
+    raw = """lbh-tool
+{"type":"context_request","requests":[{"op":"LIST_DIR","path":"docs"}]}
+Thought for 19s"""
+    reqs = parse_tool_requests(raw)
+    assert len(reqs) == 1
+    assert reqs[0].op == "LIST_DIR"
+    assert reqs[0].path == "docs"
+
+
 def test_extract_sentinel_diff():
     raw = "<<<LBH_DIFF_BEGIN>>>\ndiff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n<<<LBH_DIFF_END>>>"
     diff = extract_diff(raw)
@@ -186,6 +196,29 @@ def test_extract_hashline_patch():
     assert edits[0].new == "def foo():\n    return 1"
 
 
+def test_extract_hashline_patch_new_file_create_edit():
+    raw = """```lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "docs/new.md",
+      "create": true,
+      "new": "# New Doc\\n"
+    }
+  ]
+}
+```"""
+    edits = extract_hashline_patch(raw)
+    assert edits is not None
+    assert len(edits) == 1
+    assert edits[0].path == "docs/new.md"
+    assert edits[0].create is True
+    assert edits[0].start_line == 0
+    assert edits[0].start_hash == ""
+    assert edits[0].new == "# New Doc\n"
+
+
 def test_extract_hashline_patch_with_optional_block_hash():
     raw = """```lbh-hashline-patch
 {
@@ -272,6 +305,52 @@ def test_strip_hashline_patch_payloads_with_six_backticks():
 ``````"""
     stripped = strip_hashline_patch_payloads(raw)
     assert stripped.strip() == ""
+
+
+def test_extract_unfenced_hashline_patch_with_trailing_thought_text():
+    raw = """lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 1,
+      "end_hash": "a1b2c3",
+      "new": "updated"
+    }
+  ]
+}
+Thought for 19s"""
+    edits = extract_hashline_patch(raw)
+    assert edits is not None
+    assert len(edits) == 1
+    assert edits[0].path == "src/foo.py"
+    assert edits[0].new == "updated"
+
+
+def test_strip_hashline_patch_payloads_removes_unfenced_hashline_payload():
+    raw = """lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "src/foo.py",
+      "start_line": 1,
+      "start_hash": "a1b2c3",
+      "end_line": 1,
+      "end_hash": "a1b2c3",
+      "old": "[READ: src/example.py#1-2]",
+      "new": "value"
+    }
+  ]
+}
+Thought for 19s"""
+    stripped = strip_hashline_patch_payloads(raw)
+    reqs = parse_tool_requests(stripped)
+    assert reqs == []
+    assert stripped.strip() == "Thought for 19s"
 
 
 def test_strip_diff_payloads_with_literal_sentinel_text_inside_hunk():

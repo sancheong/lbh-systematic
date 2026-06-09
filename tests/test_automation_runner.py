@@ -187,7 +187,7 @@ def test_automation_runner_resumes_blocked_session_without_new_chat(tmp_path):
     assert ("start_chat", "Profile 4") not in second.calls
 
 
-def test_cmd_automate_passes_profile_and_apply_mode(monkeypatch, tmp_path):
+def test_cmd_automate_passes_profile_and_skip_apply(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
 
     class FakeRunner:
@@ -216,7 +216,7 @@ def test_cmd_automate_passes_profile_and_apply_mode(monkeypatch, tmp_path):
         limit=7,
         chrome_profile="Profile X",
         controller_command=None,
-        apply_mode="check",
+        skip_apply=True,
         max_retries=4,
         poll_seconds=1.5,
         timeout_seconds=90,

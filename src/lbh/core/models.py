@@ -82,6 +82,7 @@ class HashLinePatchEdit:
     new: str
     block_hash: str = ""
     old: str = ""
+    create: bool = False
 
 
 @dataclass

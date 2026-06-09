@@ -80,7 +80,7 @@ class _FakeTransport:
         return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-a\n+b\n```", "metadata": {"transport": "fake"}})()
 
 
-def test_gateway_loop_reuses_same_thread_id(tmp_path, monkeypatch):
+def _init_gateway_repo(tmp_path: Path, monkeypatch):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "a.py").write_text("a\n", encoding="utf-8")
@@ -111,6 +111,11 @@ def test_gateway_loop_reuses_same_thread_id(tmp_path, monkeypatch):
         return session
 
     monkeypatch.setattr("lbh.workflow.SessionManager.create", create_with_read_file)
+    return manager
+
+
+def test_gateway_loop_applies_patch_by_default_after_patch_ready(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
 
     transport = _FakeTransport()
     result = run_gateway_loop(
@@ -121,9 +126,29 @@ def test_gateway_loop_reuses_same_thread_id(tmp_path, monkeypatch):
         max_rounds=3,
     )
 
-    assert result.status == "patch_ready"
+    assert result.status == "applied"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "b\n"
     manifest = manager.load_manifest(result.session_root)
     assert manifest["transport"] == "catgpt-gateway"
     assert manifest["transport_session_id"] == "thr_1"
     assert manifest["responses"] == ["response_001.md", "response_002.md"]
     assert transport.calls[1][1] == "thr_1"
+
+
+def test_gateway_loop_can_skip_apply_after_patch_ready(tmp_path, monkeypatch):
+    _init_gateway_repo(tmp_path, monkeypatch)
+
+    transport = _FakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request="fix a",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=3,
+        skip_apply=True,
+    )
+
+    assert result.status == "patch_ready"
+    assert result.patch_file == result.session_root / "patch.diff"
+    assert result.message == "git apply --check passed"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "a\n"

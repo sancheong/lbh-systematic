@@ -152,6 +152,7 @@ def render_repair_prompt(validation: CandidateValidation) -> str:
                 "`lbh-hashline-patch`",
                 "",
                 "Keep the repaired output in `lbh-hashline-patch` mode. Do not fall back to a unified diff response.",
+                "Use `create: true` for new files instead of switching to diff fallback.",
                 "",
             ]
         )

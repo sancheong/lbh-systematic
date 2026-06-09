@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from lbh.cli import cmd_respond
+from lbh.cli import build_parser, cmd_respond
 from lbh.core.config import init_config
 from lbh.session.manager import SessionManager
 
@@ -17,6 +17,19 @@ diff --git a/src/a.py b/src/a.py
 +b
 <<<LBH_DIFF_END>>>
 """
+
+HASHLINE_NEW_DOC = """```lbh-hashline-patch
+{
+  "type": "hashline_patch",
+  "edits": [
+    {
+      "path": "docs/new.md",
+      "create": true,
+      "new": "# New Doc\\n\\nCreated by hashline.\\n"
+    }
+  ]
+}
+```"""
 
 
 def _init_repo(tmp_path: Path):
@@ -69,6 +82,53 @@ def test_candidate_patch_promotes_when_validation_passes(tmp_path, monkeypatch):
     assert manifest["candidates"][0]["promoted_to_patch"] is True
 
 
+def test_candidate_patch_success_prints_manual_check_and_apply_steps(tmp_path, monkeypatch, capsys):
+    _, session = _init_repo(tmp_path)
+    response_file = tmp_path / "final.md"
+    response_file.write_text(VALID_DIFF, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert "Validate only: lbh apply" in captured.out
+    assert "Apply after validation: lbh apply" in captured.out
+    assert "Candidate validation failed." not in captured.err
+
+
+def test_hashline_candidate_creates_new_file_without_diff_fallback(tmp_path, monkeypatch):
+    manager, session = _init_repo(tmp_path)
+    response_file = tmp_path / "new_doc.md"
+    response_file.write_text(HASHLINE_NEW_DOC, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    assert rc == 0
+
+    candidate_dir = session.root / "candidates"
+    diff_path = candidate_dir / "candidate_001.diff"
+    validation_path = candidate_dir / "candidate_001.validation.json"
+    assert diff_path.exists()
+    assert validation_path.exists()
+    assert session.patch.exists()
+
+    diff_text = diff_path.read_text(encoding="utf-8")
+    assert "diff --git a/docs/new.md b/docs/new.md" in diff_text
+    assert "new file mode 100644" in diff_text
+    assert "--- /dev/null" in diff_text
+    assert "+++ b/docs/new.md" in diff_text
+    assert "lbh-hashline-patch" not in diff_text
+
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["ok"] is True
+    assert validation["source_mode"] == "hashline"
+    assert validation["modified_files"] == ["docs/new.md"]
+    assert validation["new_files"] == ["docs/new.md"]
+
+    manifest = manager.load_manifest(session.root)
+    assert manifest["patch"]["source_candidate"] == "candidates/candidate_001.diff"
+    assert manifest["candidates"][0]["ok"] is True
+
+
 def test_candidate_patch_failure_generates_critique_and_no_patch(tmp_path, monkeypatch):
     manager, session = _init_repo(tmp_path)
     response_file = tmp_path / "broken.md"
@@ -119,3 +179,8 @@ def test_candidate_patch_numbering_increments(tmp_path, monkeypatch):
     candidate_dir = session.root / "candidates"
     assert (candidate_dir / "candidate_001.diff").exists()
     assert (candidate_dir / "candidate_002.diff").exists()
+
+
+def test_gateway_run_parser_accepts_check_alias():
+    args = build_parser().parse_args(["gateway-run", "refactor docs", "--check"])
+    assert args.skip_apply is True

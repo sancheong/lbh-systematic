@@ -24,10 +24,11 @@ The operating flow is:
 1. Use only context that LBH already provided in this session.
 2. If more context is needed, output exactly one fenced `lbh-tool` block.
 3. Do not output raw JSON by itself or a `json` fenced block for tool requests.
-4. Do not modify a file unless its body was provided as `<file>` or `<snippet>` context.
-5. Repository map, grep results, symbol search results, and import paths do not satisfy read-before-modify.
-6. Prefer `lbh-hashline-patch` for final patches. Use diff only as fallback.
-7. If uncertain, request more context instead of guessing.
+4. Do not modify an existing file unless its body was provided as `<file>` or `<snippet>` context.
+5. New files may be created without READ only when the patch explicitly uses the supported new-file form and the path is allowed.
+6. Repository map, grep results, symbol search results, and import paths do not satisfy read-before-modify.
+7. Prefer `lbh-hashline-patch` for final patches. Use diff only as fallback.
+8. If uncertain, request more context instead of guessing.
 ```
 
 ## Tool Request Format
@@ -105,17 +106,19 @@ Preferred final patch mode:
 Rules:
 
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
-- `new` must be the full replacement block text.
-- Use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- For existing-file edits, `new` must be the full replacement block text.
+- For existing-file edits, use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- For new files, use an edit with `create: true`, `path`, and `new`; omit line anchors, `old`, and `block_hash`.
+- New-file edits must target paths that do not already exist.
 - Do not retype the full `old` source block unless LBH explicitly asks for it.
 - `block_hash` is optional extra verification when LBH context explicitly provides it.
 - Prefer a small number of precise block replacements over whole-file rewrites.
 - Do not emit overlapping `edits` for the same file.
 - If one conceptual change renumbers or rewrites adjacent lines, emit one larger replacement block instead of multiple overlapping edits.
 - Do not invent line numbers or hashes.
-- If a target file was not provided as body context, request it first with `lbh-tool`.
+- If an existing target file was not provided as body context, request it first with `lbh-tool`.
 
-LBH validates the anchors against current file content, applies the edits deterministically in memory, and materializes a real unified diff for existing validation and apply steps.
+LBH validates anchors against current file content for existing files, validates new-file creation targets, applies the edits deterministically in memory, and materializes a real unified diff for existing validation and apply steps.
 
 ## Diff Fallback
 
@@ -141,5 +144,7 @@ LBH enforces:
 
 - target paths must stay inside the repo root
 - excluded files such as secrets and ignored artifacts are blocked
+- existing file modifications must satisfy read-before-modify
+- hashline new-file edits must materialize as real new-file diffs so validation can apply `allow_new_files_without_read`
 - final candidates must still pass deterministic validation
 - materialized diffs must pass `git apply --check` before promotion to `patch.diff`

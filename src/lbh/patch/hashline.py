@@ -36,6 +36,7 @@ def materialize_hashline_patch(repo_root: Path, edits: list[HashLinePatchEdit]) 
                 new=edit.new,
                 block_hash=edit.block_hash,
                 old=edit.old,
+                create=edit.create,
             )
         )
 
@@ -44,6 +45,34 @@ def materialize_hashline_patch(repo_root: Path, edits: list[HashLinePatchEdit]) 
 
     for rel, file_edits in grouped.items():
         path = resolve_repo_path(repo_root, rel)
+        create_edits = [edit for edit in file_edits if edit.create]
+        if create_edits:
+            if len(file_edits) != 1:
+                raise HashLinePatchError(f"new file creation for {rel} must be a single edit")
+            edit = create_edits[0]
+            if path.exists():
+                raise HashLinePatchError(f"target file already exists: {rel}")
+            _validate_create_edit(edit)
+            new_lines = edit.new.splitlines()
+            unified = list(
+                difflib.unified_diff(
+                    [],
+                    new_lines,
+                    fromfile="/dev/null",
+                    tofile=f"b/{rel}",
+                    lineterm="",
+                )
+            )
+
+            diff_parts.append(f"diff --git a/{rel} b/{rel}")
+            diff_parts.append("new file mode 100644")
+            if unified:
+                diff_parts.extend(unified)
+            else:
+                diff_parts.extend(["--- /dev/null", f"+++ b/{rel}"])
+            modified_files.append(rel)
+            continue
+
         if not path.exists() or not path.is_file():
             raise HashLinePatchError(f"target file not found: {rel}")
 
@@ -86,6 +115,13 @@ def materialize_hashline_patch(repo_root: Path, edits: list[HashLinePatchEdit]) 
         raise HashLinePatchError("hashline patch produced no file changes")
 
     return MaterializedHashLinePatch(diff="\n".join(diff_parts) + "\n", modified_files=modified_files)
+
+
+def _validate_create_edit(edit: HashLinePatchEdit) -> None:
+    if edit.start_line or edit.end_line or edit.start_hash or edit.end_hash:
+        raise HashLinePatchError(f"new file creation edit for {edit.path} must not include line anchors")
+    if edit.old or edit.block_hash:
+        raise HashLinePatchError(f"new file creation edit for {edit.path} must not include old or block_hash")
 
 
 def _validate_edit(current_lines: list[str], edit: HashLinePatchEdit) -> None:

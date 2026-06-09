@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lbh.core.config import Config
-from lbh.patch.apply import git_apply_check
 from lbh.session.manager import SessionManager
 from lbh.transport.catgpt_gateway import CatGptGatewayTransport
-from lbh.workflow import ResponseOutcome, create_session_for_request, process_response_file
+from lbh.workflow import ResponseOutcome, apply_patch_ready, create_session_for_request, process_response_file
 
 
 @dataclass(frozen=True)
@@ -28,7 +27,7 @@ def run_gateway_loop(
     api_key: str = "dummy123",
     max_rounds: int = 20,
     limit: int | None = None,
-    apply_check: bool = False,
+    skip_apply: bool = False,
     transport: CatGptGatewayTransport | None = None,
 ) -> GatewayLoopResult:
     config = Config.load(repo)
@@ -54,11 +53,14 @@ def run_gateway_loop(
     for round_num in range(2, max_rounds + 1):
         if _patch_exists(session_root):
             patch_file = session_root / "patch.diff"
-            if apply_check:
-                ok, output = git_apply_check(repo, patch_file)
-                message = "git apply --check passed" if ok else output
-                return GatewayLoopResult(session_root=session_root, status="patch_ready", rounds=round_num - 1, response_file=response_file, patch_file=patch_file, message=message)
-            return GatewayLoopResult(session_root=session_root, status="patch_ready", rounds=round_num - 1, response_file=response_file, patch_file=patch_file)
+            return _finish_patch_ready(
+                repo,
+                session_root,
+                patch_file,
+                rounds=round_num - 1,
+                response_file=response_file,
+                skip_apply=skip_apply,
+            )
 
         outbound = _next_outbound_artifact(manager, session_root)
         if outbound is None:
@@ -80,8 +82,46 @@ def run_gateway_loop(
 
     patch_file = session_root / "patch.diff"
     if patch_file.exists():
-        return GatewayLoopResult(session_root=session_root, status="patch_ready", rounds=max_rounds, response_file=response_file, patch_file=patch_file)
+        return _finish_patch_ready(
+            repo,
+            session_root,
+            patch_file,
+            rounds=max_rounds,
+            response_file=response_file,
+            skip_apply=skip_apply,
+        )
     return GatewayLoopResult(session_root=session_root, status="max_rounds_exceeded", rounds=max_rounds, response_file=response_file, message="Maximum gateway rounds exceeded.")
+
+
+def _finish_patch_ready(
+    repo: Path,
+    session_root: Path,
+    patch_file: Path,
+    *,
+    rounds: int,
+    response_file: Path,
+    skip_apply: bool,
+) -> GatewayLoopResult:
+    outcome = apply_patch_ready(repo, patch_file, session_root=session_root, skip_apply=skip_apply)
+    if not outcome.ok:
+        message = outcome.output or "; ".join(outcome.validation_errors) or "patch apply failed"
+        return GatewayLoopResult(
+            session_root=session_root,
+            status="blocked",
+            rounds=rounds,
+            response_file=response_file,
+            patch_file=patch_file,
+            message=message,
+        )
+    status = "patch_ready" if skip_apply else "applied"
+    return GatewayLoopResult(
+        session_root=session_root,
+        status=status,
+        rounds=rounds,
+        response_file=response_file,
+        patch_file=patch_file,
+        message=outcome.output,
+    )
 
 
 def _record_transport_session(manager: SessionManager, session_root: Path, base_url: str, session_id: str) -> None:

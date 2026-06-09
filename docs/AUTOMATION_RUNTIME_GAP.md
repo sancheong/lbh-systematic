@@ -102,7 +102,7 @@ The committed `lbh automate` flow is effectively:
 6. run `lbh respond`
 7. branch to `context_append`, `repair_prompt`, or `patch.diff`
 8. run `lbh apply --check`
-9. optionally `lbh apply --yes`
+9. run `lbh apply --yes` by default unless an explicit skip-apply flag is used
 
 This makes LBH:
 

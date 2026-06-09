@@ -37,6 +37,8 @@ src/lbh/transport/catgpt_gateway.py
 
 `CatGPT-Gateway`를 쓰는 경우에는 같은 경계를 유지한 채 수동 copy/paste만 HTTP adapter로 바꿉니다.
 
+Gateway health/readiness preflight is deployment-specific. If a caller checks `GET /status`, it must use the same authentication policy as the real gateway deployment. In deployments that protect status endpoints, `/status` may require `Authorization: Bearer dummy123` or the configured bearer token; do not assume status is unauthenticated unless that matches the gateway policy.
+
 ```text
 1. LBH가 initial_prompt.md 생성
 2. gateway가 /thread/new 로 첫 메시지를 전송

@@ -6,6 +6,7 @@ Runs the thin Chrome/ChatGPT automation runtime on top of the existing LBH sessi
 
 ```bash
 lbh automate "fix the notification bug" --controller-command "python tools/chatgpt_controller.py"
+lbh automate "fix the notification bug" --skip-apply --controller-command "python tools/chatgpt_controller.py"
 lbh automate --session .lbh/sessions/<session-id> --controller-command "python tools/chatgpt_controller.py"
 ```
 
@@ -13,7 +14,7 @@ Key options:
 
 - `--chrome-profile`: Chrome profile name. Default: `Profile 4`
 - `--controller-command`: external browser controller command
-- `--apply-mode check|yes`: after patch promotion, stop at `git apply --check` or continue to `--yes`
+- `--skip-apply`: stop after patch promotion and `git apply --check` instead of applying the patch
 - `--max-retries`: browser-step retry count before blocking the session
 - `--poll-seconds`, `--timeout-seconds`: response wait tuning
 
@@ -22,7 +23,7 @@ Automation behavior:
 - starts one ChatGPT conversation per LBH session
 - sends `initial_prompt.md`, then any `context_append_###.md`
 - if a candidate patch fails validation, sends the generated `candidate_###.repair_prompt.md`
-- promotes only validated candidates to `patch.diff`
+- promotes only validated candidates to `patch.diff`, then applies them by default
 - persists runtime state under `manifest.json -> automation`
 
 ## `lbh init`
@@ -160,8 +161,10 @@ lbh doctor
 
 ```bash
 lbh gateway-run "결제 실패 시 알림이 누락되는 문제를 수정"
-lbh gateway-run "payment notification bug" --base-url http://localhost:8000 --api-key dummy123 --check
+lbh gateway-run "payment notification bug" --base-url http://localhost:8000 --api-key dummy123 --skip-apply
 ```
+
+Gateway status preflight must match the actual gateway authentication policy. If your deployment requires bearer auth on `GET /status`, call it with `Authorization: Bearer dummy123` or the token passed with `--api-key`; only omit auth when the gateway really exposes `/status` unauthenticated.
 
 동작:
 
@@ -169,5 +172,5 @@ lbh gateway-run "payment notification bug" --base-url http://localhost:8000 --ap
 - `POST /thread/new`로 첫 prompt를 전송합니다.
 - 응답을 `response_001.md`로 저장한 뒤 `lbh respond`와 같은 파이프라인으로 처리합니다.
 - `context_append_###.md` 또는 repair prompt가 생기면 같은 `thread_id`로 다시 보냅니다.
-- `patch.diff`가 준비되면 중단합니다.
-- `--check`를 주면 마지막에 `git apply --check`까지 실행합니다.
+- `patch.diff`가 준비되면 기본적으로 `git apply --check` 후 patch를 적용합니다.
+- `--skip-apply`를 주면 적용하지 않고 patch-ready 상태에서 중단합니다.

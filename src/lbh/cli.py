@@ -90,8 +90,9 @@ def cmd_respond(args: argparse.Namespace) -> int:
             print("Candidate validation passed.")
             print(f"Promoted to patch: {outcome.patch_path}")
             print(f"Modified files: {', '.join(outcome.modified_files) or '(none)'}")
-            print("Next:")
-            print(f"  lbh apply {outcome.patch_path} --session {session_root} --check")
+            print("Next for a manual session:")
+            print(f"  Validate only: lbh apply {outcome.patch_path} --session {session_root} --check")
+            print(f"  Apply after validation: lbh apply {outcome.patch_path} --session {session_root} --yes")
         elif outcome.critique_path is not None and outcome.repair_prompt_path is not None:
             print("Candidate validation failed.", file=sys.stderr)
             print(f"Critique: {outcome.critique_path}", file=sys.stderr)
@@ -113,7 +114,7 @@ def cmd_gateway_run(args: argparse.Namespace) -> int:
         api_key=args.api_key,
         max_rounds=args.max_rounds,
         limit=args.limit,
-        apply_check=args.check,
+        skip_apply=args.skip_apply,
     )
     print(f"Session: {result.session_root}")
     if result.response_file:
@@ -122,8 +123,11 @@ def cmd_gateway_run(args: argparse.Namespace) -> int:
         print(f"Patch: {result.patch_file}")
     if result.message:
         print(result.message)
-    if result.status == "patch_ready":
-        print("Gateway loop reached patch-ready state.")
+    if result.status in {"patch_ready", "applied"}:
+        if result.status == "applied":
+            print("Gateway loop applied patch.")
+        else:
+            print("Gateway loop reached patch-ready state without applying.")
         return 0
     print(f"Gateway loop stopped with status: {result.status}", file=sys.stderr)
     return 4
@@ -198,7 +202,7 @@ def cmd_automate(args: argparse.Namespace) -> int:
     controller = build_browser_controller(args)
     options = AutomationOptions(
         chrome_profile=args.chrome_profile,
-        apply_mode=args.apply_mode,
+        apply_mode="check" if args.skip_apply else "yes",
         max_retries=args.max_retries,
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
@@ -291,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--limit", type=int, default=None)
     sp.add_argument("--chrome-profile", default="Profile 4")
     sp.add_argument("--controller-command", help="external browser controller command")
-    sp.add_argument("--apply-mode", choices=["check", "yes"], default="yes")
+    sp.add_argument("--skip-apply", action="store_true", help="stop after patch promotion and apply check instead of applying")
     sp.add_argument("--max-retries", type=int, default=2)
     sp.add_argument("--poll-seconds", type=float, default=2.0)
     sp.add_argument("--timeout-seconds", type=int, default=300)
@@ -327,7 +331,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--api-key", default="dummy123")
     sp.add_argument("--limit", type=int, default=None)
     sp.add_argument("--max-rounds", type=int, default=20)
-    sp.add_argument("--check", action="store_true", help="run git apply --check when patch.diff is ready")
+    group = sp.add_mutually_exclusive_group()
+    group.add_argument("--skip-apply", dest="skip_apply", action="store_true", help="stop when patch.diff is ready instead of applying it")
+    group.add_argument("--check", dest="skip_apply", action="store_true", help=argparse.SUPPRESS)
     sp.set_defaults(func=cmd_gateway_run)
     return p
 

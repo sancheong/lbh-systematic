@@ -99,29 +99,31 @@ You must work only from the context provided by LBH.
 
 ## Hard Rules
 
-1. Do not modify any file unless its content has been provided through LBH context in this session.
-2. If you need more information, output exactly one fenced `lbh-tool` block.
-3. The very first non-whitespace characters of a tool request must be three U+0060 backtick characters immediately followed by `lbh-tool`.
-4. The block must end with a line that contains exactly three U+0060 backtick characters and nothing else.
-5. Do not output raw JSON, a `json` fenced block, or prose outside the `lbh-tool` block when requesting context.
-6. Do not prepend commentary such as "Thought for 5s", "Here is the request", or any text before the opening `lbh-tool` fence.
-7. If you are ready to patch, prefer exactly one `lbh-hashline-patch` block. Use `lbh-diff` only as fallback when a hashline patch cannot express the change.
-8. Before any final diff, verify that every file you modify was actually provided in this session through a `<file>` or `<snippet>` block.
-9. Repository map, directory tree, grep results, symbol search results, and import paths do not count as file body reads.
-10. If any file you want to modify has not been provided as file body context yet, do not emit a diff; request it with `lbh-tool` READ first.
-11. Document and Markdown files follow the same read-before-modify rule.
-12. A READ path must appear exactly in the Repository Map, Relevant Directory Tree, Evidence Snippets, or prior LBH tool results.
-13. Do not derive READ paths from imports, module names, comments, documentation mentions, or conventional package layouts.
-14. If you infer that an unlisted file may be relevant, use `GREP`, `FIND_SYMBOL`, `LIST_DIR`, or `DEP_GRAPH` first to discover an exact path.
-15. `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, and `TEST_HINTS` help you discover or inspect paths, but they do not replace a final file body READ before modification.
-16. Prefer minimal READ ranges over full files.
-17. Do not request secrets, `.env`, credentials, build artifacts, lockfiles, or ignored files.
-18. Do not invent APIs or tool schema fields that are not shown in this prompt.
-19. For protocol or output-format changes, inspect the prompt generator, parser, CLI, tests, and docs together. For session or manifest changes, inspect the session manager too.
-20. When patching Markdown files that contain fenced code blocks, prefer the LBH sentinel diff format instead of a fenced `lbh-diff` block.
-21. The LBH sentinel only wraps the diff; inside it you must still produce a pure git unified diff.
-22. Final patch must be a valid git unified diff with `diff --git` headers.
-23. When uncertain, request more context instead of guessing.
+1. Do not modify any existing file unless its content has been provided through LBH context in this session.
+2. New files may be created without prior READ only with a supported new-file patch form; prefer `lbh-hashline-patch` with `create: true`.
+3. If you need more information, output exactly one fenced `lbh-tool` block.
+4. The very first non-whitespace characters of a tool request must be three U+0060 backtick characters immediately followed by `lbh-tool`.
+5. The block must end with a line that contains exactly three U+0060 backtick characters and nothing else.
+6. Do not output raw JSON, a `json` fenced block, or prose outside the `lbh-tool` block when requesting context.
+7. Do not prepend commentary such as "Thought for 5s", "Here is the request", or any text before the opening `lbh-tool` fence.
+8. If you are ready to patch, prefer exactly one `lbh-hashline-patch` block. Use `lbh-diff` only as fallback when a hashline patch cannot express the change.
+9. Before any final diff, verify that every existing file you modify was actually provided in this session through a `<file>` or `<snippet>` block.
+10. Repository map, directory tree, grep results, symbol search results, and import paths do not count as file body reads.
+11. If any existing file you want to modify has not been provided as file body context yet, do not emit a diff; request it with `lbh-tool` READ first.
+12. Document and Markdown files follow the same read-before-modify rule for existing files.
+13. A READ path must appear exactly in the Repository Map, Relevant Directory Tree, Evidence Snippets, or prior LBH tool results.
+14. Do not derive READ paths from imports, module names, comments, documentation mentions, or conventional package layouts.
+15. If you infer that an unlisted file may be relevant, use `GREP`, `FIND_SYMBOL`, `LIST_DIR`, or `DEP_GRAPH` first to discover an exact path.
+16. `GREP`, `FIND_SYMBOL`, `LIST_DIR`, `DEP_GRAPH`, and `TEST_HINTS` help you discover or inspect paths, but they do not replace a final file body READ before modification.
+17. Prefer minimal READ ranges over full files.
+18. Do not request secrets, `.env`, credentials, build artifacts, lockfiles, or ignored files.
+19. Do not invent APIs or tool schema fields that are not shown in this prompt.
+20. For protocol or output-format changes, inspect the prompt generator, parser, CLI, tests, and docs together. For session or manifest changes, inspect the session manager too.
+21. When patching Markdown files that contain fenced code blocks, prefer the LBH sentinel diff format instead of a fenced `lbh-diff` block.
+22. The LBH sentinel only wraps the diff; inside it you must still produce a pure git unified diff.
+23. Final patch must be a valid git unified diff with `diff --git` headers.
+24. LBH automation applies a promoted patch automatically by default; only an explicit skip-apply flag should stop at patch-ready.
+25. When uncertain, request more context instead of guessing.
 
 ## Available LBH Tools
 
@@ -225,21 +227,23 @@ Preferred hashline patch structure:
 Rules for `lbh-hashline-patch`:
 
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
-- `new` must be the full replacement block text.
-- Use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- For existing-file edits, `new` must be the full replacement block text.
+- For existing-file edits, use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- For new files, use `create: true` with `path` and `new`; omit `start_line`, `start_hash`, `end_line`, `end_hash`, `old`, and `block_hash`.
+- New-file edits must target paths that do not already exist.
 - Do not retype the full `old` source block unless LBH explicitly asks for it.
 - `block_hash` is optional extra verification when LBH context explicitly provides it.
 - Prefer a small number of precise block replacements over whole-file rewrites.
 - Do not emit overlapping `edits` for the same file.
 - If a renumbering or paragraph/list rewrite affects adjacent lines, emit one larger replacement block instead of multiple overlapping edits.
 - Do not invent hashes or line numbers; copy them exactly from LBH context.
-- If a file has not been provided as `<file>` or `<snippet>` body context yet, request it with `lbh-tool` READ instead of emitting a patch.
-
+- If an existing file has not been provided as `<file>` or `<snippet>` body context yet, request it with `lbh-tool` READ instead of emitting a patch.
 Preflight before emitting any final diff:
 
-- Check that every modified file body was already provided in LBH context in this session.
+- Check that every existing modified file body was already provided in LBH context in this session.
+- New files do not have prior body context, but must use the explicit new-file protocol form and must not already exist.
 - Repo map, directory tree, grep results, symbol search results, and import paths are not enough to satisfy read-before-modify.
-- If any target file has not been provided yet, request it with `lbh-tool` READ instead of emitting a diff.
+- If any existing target file has not been provided yet, request it with `lbh-tool` READ instead of emitting a diff.
 - This rule applies to documentation files too.
 - The LBH sentinel only wraps the diff; it does not relax git unified diff syntax.
 - Inside the final diff, never use Markdown bullets, fenced code blocks, explanatory prose, numbered lists, or pseudo-code formatting.

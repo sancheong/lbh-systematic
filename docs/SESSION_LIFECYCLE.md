@@ -7,7 +7,7 @@ Automated runs add an `automation` section to `manifest.json`. The section recor
 - `provider`: currently `chatgpt_web`
 - `controller_kind`: currently `shell_command`
 - `chrome_profile`
-- `apply_mode`
+- `apply_mode`: resolved internal mode, `yes` by default and `check` when `--skip-apply` is used
 - `state`
 - `retry_counts`
 - `chat_ref`
@@ -31,6 +31,7 @@ Important states:
 - `completed`
 - `blocked`
 
+The normal automated success path reaches `apply_check`, then `apply_yes`, then `completed`. With `--skip-apply`, it completes after `apply_check` without entering `apply_yes`.
 A blocked session can be resumed with:
 
 ```bash

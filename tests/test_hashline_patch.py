@@ -47,6 +47,62 @@ def test_materialize_hashline_patch(tmp_path: Path):
     assert proc.returncode == 0, proc.stdout
 
 
+def test_materialize_hashline_patch_creates_new_file(tmp_path: Path):
+    repo = tmp_path
+    edit = HashLinePatchEdit(
+        path="docs/new.md",
+        start_line=0,
+        start_hash="",
+        end_line=0,
+        end_hash="",
+        new="# New Doc\n\nCreated by hashline.\n",
+        create=True,
+    )
+
+    materialized = materialize_hashline_patch(repo, [edit])
+    assert materialized.modified_files == ["docs/new.md"]
+    assert "diff --git a/docs/new.md b/docs/new.md" in materialized.diff
+    assert "new file mode 100644" in materialized.diff
+    assert "--- /dev/null" in materialized.diff
+    assert "+++ b/docs/new.md" in materialized.diff
+    assert "+# New Doc" in materialized.diff
+
+    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    patch_path = repo / "candidate.diff"
+    write_text_exact(patch_path, materialized.diff)
+    proc = subprocess.run(
+        ["git", "apply", "--check", str(patch_path)],
+        cwd=repo,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stdout
+
+
+def test_materialize_hashline_patch_rejects_existing_create_target(tmp_path: Path):
+    repo = tmp_path
+    path = repo / "README.md"
+    path.write_text("existing\n", encoding="utf-8")
+    edit = HashLinePatchEdit(
+        path="README.md",
+        start_line=0,
+        start_hash="",
+        end_line=0,
+        end_hash="",
+        new="# Replacement\n",
+        create=True,
+    )
+
+    try:
+        materialize_hashline_patch(repo, [edit])
+    except HashLinePatchError as exc:
+        assert "target file already exists" in str(exc)
+    else:
+        raise AssertionError("expected HashLinePatchError")
+
+
 def test_materialize_hashline_patch_rejects_stale_hash(tmp_path: Path):
     repo = tmp_path
     path = repo / "sample.py"
