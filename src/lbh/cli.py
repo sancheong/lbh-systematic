@@ -90,7 +90,8 @@ def cmd_respond(args: argparse.Namespace) -> int:
             print("Candidate validation passed.")
             print(f"Promoted to patch: {outcome.patch_path}")
             print(f"Modified files: {', '.join(outcome.modified_files) or '(none)'}")
-            print("Next for a manual session:")
+            print("Next for this session-backed patch:")
+            print(f"  Session context: {session_root}")
             print(f"  Validate only: lbh apply {outcome.patch_path} --session {session_root} --check")
             print(f"  Apply after validation: lbh apply {outcome.patch_path} --session {session_root} --yes")
         elif outcome.critique_path is not None and outcome.repair_prompt_path is not None:
@@ -152,16 +153,34 @@ def cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def _infer_session_root_from_patch(diff_path: Path) -> Path | None:
+    if diff_path.name == "patch.diff" and (diff_path.parent / "manifest.json").exists():
+        return diff_path.parent
+    if diff_path.parent.name == "candidates" and (diff_path.parent.parent / "manifest.json").exists():
+        return diff_path.parent.parent
+    return None
+
+
 def cmd_apply(args: argparse.Namespace) -> int:
     repo = find_repo_root()
     diff_path = Path(args.patch)
     if not diff_path.is_absolute():
         diff_path = (Path.cwd() / diff_path).resolve()
     session_root = None
+    session_was_inferred = False
     if args.session:
         session_root = Path(args.session)
         if not session_root.is_absolute():
             session_root = (Path.cwd() / session_root).resolve()
+    else:
+        session_root = _infer_session_root_from_patch(diff_path)
+        session_was_inferred = session_root is not None
+
+    if session_was_inferred:
+        print(f"Using session context: {session_root}")
+    elif args.yes:
+        print("Warning: applying without --session; LBH read-before-modify context will not be enforced.", file=sys.stderr)
+
     outcome = apply_patch_file(repo, diff_path, session_root=session_root, check=args.check, yes=args.yes)
     if not outcome.ok:
         if outcome.return_code == 2:
@@ -311,11 +330,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--range", help="line range like 1:120")
     sp.set_defaults(func=cmd_read)
 
-    sp = sub.add_parser("apply", help="validate or apply a diff")
-    sp.add_argument("patch")
-    sp.add_argument("--session")
-    sp.add_argument("--check", action="store_true")
-    sp.add_argument("--yes", action="store_true")
+    sp = sub.add_parser("apply", help="validate or apply a diff with optional LBH session context")
+    sp.add_argument("patch", help="diff path; session patch paths auto-infer --session")
+    sp.add_argument("--session", help="LBH session whose manifest supplies read-before-modify context")
+    sp.add_argument("--check", action="store_true", help="validate and run git apply --check without applying")
+    sp.add_argument("--yes", action="store_true", help="apply after validation; without this, apply only checks")
     sp.set_defaults(func=cmd_apply)
 
     sp = sub.add_parser("status", help="show session manifest")

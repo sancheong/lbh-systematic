@@ -107,8 +107,15 @@ candidates/candidate_001.repair_prompt.md
 ```
 
 가 생성됩니다.
-candidate validation이 통과한 경우에만 `patch.diff`로 승격됩니다.
+candidate validation이 통과한 경우에만 `.lbh/sessions/<session-id>/patch.diff`로 승격됩니다.
 실패하면 critique와 repair prompt 위치를 출력하고 `patch.diff`는 승격되지 않습니다.
+
+수동 적용 단계에서는 session context를 유지해야 합니다. `--session`은 manifest의 read-before-modify 정보를 다시 사용하므로, `lbh respond`가 출력한 같은 session 경로를 넘깁니다.
+
+```bash
+lbh apply .lbh/sessions/<session-id>/patch.diff --session .lbh/sessions/<session-id> --check
+lbh apply .lbh/sessions/<session-id>/patch.diff --session .lbh/sessions/<session-id> --yes
+```
 
 ## `lbh read`
 
@@ -121,15 +128,16 @@ lbh read src/payments/checkout.ts --range 1:120
 
 ## `lbh apply`
 
-diff를 검증하거나 적용합니다.
+diff를 검증하거나 적용합니다. session-backed patch는 session context와 함께 검증해야 합니다.
 
 ```bash
-lbh apply patch.diff --check
-lbh apply patch.diff --session .lbh/sessions/<session-id> --check
-lbh apply patch.diff --session .lbh/sessions/<session-id> --yes
+lbh apply .lbh/sessions/<session-id>/patch.diff --session .lbh/sessions/<session-id> --check
+lbh apply .lbh/sessions/<session-id>/patch.diff --session .lbh/sessions/<session-id> --yes
 ```
 
-기본적으로 `--yes` 없이는 실제 적용하지 않습니다.
+`.lbh/sessions/<session-id>/patch.diff` 또는 `.lbh/sessions/<session-id>/candidates/candidate_001.diff`처럼 session 안에 있는 patch 경로를 넘기면 `lbh apply`가 `--session`을 자동 추론하고 `Using session context: ...`를 출력합니다. 그래도 문서와 수동 절차에서는 실수를 줄이기 위해 `--session`을 명시합니다.
+
+기본적으로 `--yes` 없이는 실제 적용하지 않습니다. `--yes`를 `--session` 없이 사용하면 read-before-modify context가 적용되지 않는다는 경고를 출력합니다.
 
 ## `lbh status`
 

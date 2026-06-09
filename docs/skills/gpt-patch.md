@@ -40,7 +40,8 @@ When this skill is invoked:
 - Do not substitute a custom implementation workflow.
 - Do not inspect full patch contents by default.
 - Do not fall back to raw unified diff if hashline patch validation fails.
-- Do not apply patches unless the user explicitly asks.
+- Let LBH automation apply promoted patches by default.
+- Use skip-apply/check-only wording only when the user explicitly requests non-apply mode.
 - Do not retry with a more complex or different request until the stop reason or validation status has been reported.
 - If a required command, path, repository state, gateway check, or validation step fails, stop and report the exact blocker.
 
@@ -67,24 +68,26 @@ The allowed actions are only:
 3. Run `python -m lbh.cli init` only when `.lbh` is missing.
 4. Run `python -m lbh.cli index` when required by the reindex rule.
 5. Check gateway reachability and authentication at `http://localhost:8000/status`.
-6. Run `python -m lbh.cli gateway-run` in check-only mode.
-7. Inspect only status-level LBH artifacts needed to determine success or failure.
-8. Report the final state, artifact paths, stop reason, and next safe command.
+6. Run `python -m lbh.cli gateway-run` in default auto-apply mode.
+7. Use `--skip-apply` or `--check` only when the user explicitly requests non-apply mode.
+8. Inspect only status-level LBH artifacts needed to determine success or failure.
+9. Report the final state, artifact paths, stop reason, and next safe command.
 
-No other repository-changing action is allowed unless the user explicitly asks.
+No direct repository-changing action is allowed unless the user explicitly asks. Patch application performed by LBH automation after promotion is part of the default workflow.
 
 ## Canonical CLI Contract
 
-For this repository, the canonical non-applying gateway command is:
+For this repository, the canonical gateway command is:
 
 ```powershell
-python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20 --check
+python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20
 ```
 
 Notes:
 
-- `gateway-run --check` is the compatibility contract that this skill expects.
-- In this repository, `gateway-run --skip-apply` is also accepted and maps to the same behavior.
+- `gateway-run` validates and applies a promoted patch by default.
+- Use `gateway-run --skip-apply` only when the user explicitly requests non-apply mode.
+- `gateway-run --check` is a compatibility spelling for the same explicit non-apply behavior.
 - For manual patch application after `patch.diff` already exists, `lbh apply ... --check` validates and `lbh apply ... --yes` applies.
 
 ## Artifact Reading Limits
@@ -130,7 +133,7 @@ Run this workflow in order.
 10. Confirm the gateway is reachable and authenticated at `http://localhost:8000/status`.
 11. If the gateway returns `401` or `403`, stop and report an authentication blocker.
 12. Run `gateway-run` with a short, rough, intent-clear request.
-13. Use check-only mode by default.
+13. Use default auto-apply mode unless the user explicitly requests non-apply mode.
 14. Determine the resulting LBH state.
 15. Report the result using the required final response format.
 16. Stop.
@@ -172,7 +175,7 @@ $gatewayApiKey = $env:LBH_GATEWAY_API_KEY
 if (-not $gatewayApiKey) { throw 'LBH_GATEWAY_API_KEY is not set' }
 python -m lbh.cli init
 python -m lbh.cli index
-python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20 --check
+python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20
 ```
 
 When `.lbh` already exists:
@@ -182,8 +185,10 @@ $env:PYTHONPATH = 'C:\developer\lbh-systematic\src'
 $gatewayApiKey = $env:LBH_GATEWAY_API_KEY
 if (-not $gatewayApiKey) { throw 'LBH_GATEWAY_API_KEY is not set' }
 python -m lbh.cli index
-python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20 --check
+python -m lbh.cli gateway-run "<rough request>" --base-url http://localhost:8000 --api-key $gatewayApiKey --max-rounds 20
 ```
+
+For explicit non-apply mode only, append `--skip-apply` to `gateway-run`; `--check` is accepted as compatibility wording for that same non-apply behavior.
 
 Do not replace these commands with a custom implementation path. If a command fails, report the exact failed command and stop reason.
 
@@ -263,6 +268,7 @@ For `patch_ready`, report:
 - latest response file
 - `patch.diff` path
 - whether check passed
+- whether apply was skipped by an explicit non-apply flag
 - next safe command
 
 Do not read or summarize `patch.diff`.
@@ -313,18 +319,20 @@ Do not hide `git apply --check` failures.
 
 ## Applying Patches
 
-Do not apply patches by default.
+LBH automation applies promoted patches by default after validation and apply-check pass.
 
-Codex may only apply a patch when the user explicitly asks to apply it.
+Use non-apply mode only when the user explicitly asks to stop after patch promotion and apply-check. In that case, add `--skip-apply`; `--check` is accepted only as compatibility wording for the same non-apply behavior.
 
-Before applying any patch, Codex must report:
+Codex must not manually apply patches outside the LBH workflow unless the user explicitly asks.
+
+Before any manual patch application, Codex must report:
 
 - the patch path
 - the current working tree status
 - whether unrelated working tree changes exist
 - the exact apply command it intends to run
 
-If unrelated working tree changes exist, Codex must mention them before applying the patch.
+If unrelated working tree changes exist, Codex must mention them before manual patch application.
 
 ## Required Final Response Format
 
@@ -338,8 +346,8 @@ Gateway URL:
 Working tree had unrelated changes: yes / no / unknown
 .lbh init run: yes / no
 lbh index run: yes / no
-gateway-run --check run: yes / no
-Final state: patch_ready / answer_ready / blocked / validation_failed / unknown
+gateway-run auto-apply mode used: yes / no
+Explicit non-apply flag used: yes / no
 Session path:
 Latest response file:
 Patch diff path:

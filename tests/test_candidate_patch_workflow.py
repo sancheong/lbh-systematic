@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from lbh.cli import build_parser, cmd_respond
+from lbh.cli import build_parser, cmd_apply, cmd_respond
 from lbh.core.config import init_config
 from lbh.session.manager import SessionManager
 
@@ -91,9 +91,27 @@ def test_candidate_patch_success_prints_manual_check_and_apply_steps(tmp_path, m
     captured = capsys.readouterr()
 
     assert rc == 0
+    assert "Next for this session-backed patch:" in captured.out
+    assert f"Session context: {session.root}" in captured.out
     assert "Validate only: lbh apply" in captured.out
     assert "Apply after validation: lbh apply" in captured.out
+    assert "--session" in captured.out
     assert "Candidate validation failed." not in captured.err
+
+
+def test_apply_infers_session_from_session_patch_path(tmp_path, monkeypatch, capsys):
+    _, session = _init_repo(tmp_path)
+    response_file = tmp_path / "final.md"
+    response_file.write_text(VALID_DIFF, encoding="utf-8")
+    assert _run_respond(tmp_path, session.root, response_file, monkeypatch) == 0
+    capsys.readouterr()
+
+    rc = cmd_apply(argparse.Namespace(patch=str(session.patch), session=None, check=True, yes=False))
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert f"Using session context: {session.root}" in captured.out
+    assert "git apply --check passed" in captured.out
 
 
 def test_hashline_candidate_creates_new_file_without_diff_fallback(tmp_path, monkeypatch):
