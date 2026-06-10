@@ -10,8 +10,8 @@ def test_format_hashline_lines():
     text = "alpha\nbeta\n"
     formatted = format_hashline_lines(text, 1, 2)
     lines = formatted.splitlines()
-    assert lines[0] == f"1#{short_line_hash('alpha')} | alpha"
-    assert lines[1] == f"2#{short_line_hash('beta')} | beta"
+    assert lines[0] == f"@@LINE[1,{short_line_hash('alpha')}]@@ alpha"
+    assert lines[1] == f"@@LINE[2,{short_line_hash('beta')}]@@ beta"
 
 
 def test_materialize_hashline_patch(tmp_path: Path):
