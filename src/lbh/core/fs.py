@@ -121,8 +121,7 @@ def format_hashline_lines(text: str, start: int = 1, end: int | None = None) -> 
     if end is None:
         end = len(lines)
     selected = line_slice(text, start, end)
-    width = len(str(end))
-    return "\n".join(f"{num:>{width}}#{short_line_hash(line)} | {line}" for num, line in selected)
+    return "\n".join(f"@@LINE[{num},{short_line_hash(line)}]@@ {line}" for num, line in selected)
 
 
 def classify_layer(path: str) -> str:

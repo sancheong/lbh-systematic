@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lbh.cli import build_parser, cmd_apply, cmd_respond
 from lbh.core.config import init_config
+from lbh.core.fs import short_line_hash
 from lbh.session.manager import SessionManager
 
 
@@ -31,6 +32,32 @@ HASHLINE_NEW_DOC = """```lbh-hashline-patch
 }
 ```"""
 
+HASHLINE_EXISTING_SNIPPET_EDIT = f"""```lbh-hashline-patch
+{{
+  "type": "hashline_patch",
+  "edits": [
+    {{
+      "path": "src/a.py",
+      "start_line": 1,
+      "start_hash": "{short_line_hash('a')}",
+      "end_line": 1,
+      "end_hash": "{short_line_hash('a')}",
+      "new": "b"
+    }}
+  ]
+}}
+```"""
+
+OUTSIDE_READ_RANGE_DIFF = """<<<LBH_DIFF_BEGIN>>>
+diff --git a/src/a.py b/src/a.py
+--- a/src/a.py
++++ b/src/a.py
+@@ -1,2 +1,2 @@
+ a
+-b
++c
+<<<LBH_DIFF_END>>>
+"""
 
 def _init_repo(tmp_path: Path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -145,6 +172,38 @@ def test_hashline_candidate_creates_new_file_without_diff_fallback(tmp_path, mon
     manifest = manager.load_manifest(session.root)
     assert manifest["patch"]["source_candidate"] == "candidates/candidate_001.diff"
     assert manifest["candidates"][0]["ok"] is True
+
+
+def test_hashline_candidate_inside_initial_snippet_range_is_read(tmp_path, monkeypatch):
+    manager, session = _init_repo(tmp_path)
+    response_file = tmp_path / "existing_snippet_edit.md"
+    response_file.write_text(HASHLINE_EXISTING_SNIPPET_EDIT, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    assert rc == 0
+
+    validation_path = session.root / "candidates" / "candidate_001.validation.json"
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["ok"] is True
+    assert validation["source_mode"] == "hashline"
+    assert validation["modified_files"] == ["src/a.py"]
+    assert session.patch.exists()
+
+
+def test_candidate_patch_rejects_diff_outside_read_range(tmp_path, monkeypatch):
+    _, session = _init_repo(tmp_path)
+    (tmp_path / "src" / "a.py").write_text("a\nb\n", encoding="utf-8")
+    response_file = tmp_path / "empty_range.md"
+    response_file.write_text(OUTSIDE_READ_RANGE_DIFF, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    assert rc == 3
+
+    validation_path = session.root / "candidates" / "candidate_001.validation.json"
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["ok"] is False
+    assert any("unread lines" in item["message"] for item in validation["errors"])
+    assert not session.patch.exists()
 
 
 def test_candidate_patch_failure_generates_critique_and_no_patch(tmp_path, monkeypatch):

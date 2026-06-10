@@ -70,8 +70,10 @@ def ask_request(repo: Path, request: str, *, limit: int | None = None) -> AskRes
     ranked = SearchRanker(repo).rank(request, limit=limit or config.initial_file_limit)
     manager = SessionManager(repo)
     session = manager.create(request, ranked=[item.__dict__ for item in ranked])
-    prompt = ContextPacker(repo, config).build_initial_prompt(request, ranked)
+    packer = ContextPacker(repo, config)
+    prompt = packer.build_initial_prompt(request, ranked)
     session.initial_prompt.write_text(prompt, encoding="utf-8")
+    manager.register_read_files(session.root, packer.initial_read_files(ranked))
     return AskResult(session_root=session.root, initial_prompt=session.initial_prompt)
 
 
@@ -86,8 +88,10 @@ def create_session_for_request(
         ranked = SearchRanker(repo).rank(request, limit=limit or config.initial_file_limit)
         manager = SessionManager(repo)
         session = manager.create(request, ranked=[item.__dict__ for item in ranked])
-        prompt = ContextPacker(repo, config).build_initial_prompt(request, ranked)
+        packer = ContextPacker(repo, config)
+        prompt = packer.build_initial_prompt(request, ranked)
         session.initial_prompt.write_text(prompt, encoding="utf-8")
+        manager.register_read_files(session.root, packer.initial_read_files(ranked))
         return session.root, session.initial_prompt
     result = ask_request(repo, request, limit=limit)
     return result.session_root, result.initial_prompt

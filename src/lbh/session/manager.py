@@ -78,10 +78,16 @@ class SessionManager:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
     def register_read_file(self, session_root: str | Path, path: str, sha256: str, ranges: list[dict[str, int]]) -> None:
+        self.register_read_files(session_root, {path: {"sha256": sha256, "ranges": ranges}})
+
+    def register_read_files(self, session_root: str | Path, read_files: dict[str, Any]) -> None:
         manifest = self.load_manifest(session_root)
-        entry = manifest.setdefault("read_files", {}).setdefault(path, {"sha256": sha256, "ranges": []})
-        entry["sha256"] = sha256
-        entry.setdefault("ranges", []).extend(ranges)
+        entries = manifest.setdefault("read_files", {})
+        for path, read_entry in read_files.items():
+            entry = entries.setdefault(path, {"sha256": read_entry.get("sha256", ""), "ranges": []})
+            if "sha256" in read_entry:
+                entry["sha256"] = read_entry["sha256"]
+            entry.setdefault("ranges", []).extend(read_entry.get("ranges", []))
         self.write_manifest(session_root, manifest)
 
     def next_context_append_path(self, session_root: str | Path) -> Path:

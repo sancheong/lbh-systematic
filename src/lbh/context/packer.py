@@ -68,8 +68,8 @@ class ContextPacker:
                 lines.append("")
         return "\n".join(lines).strip()
 
-    def snippets(self, ranked: list[RankedFile]) -> str:
-        chunks: list[str] = []
+    def _snippet_payloads(self, ranked: list[RankedFile]) -> list[tuple[str, str, int, str]]:
+        payloads: list[tuple[str, str, int, str]] = []
         for rf in ranked[: self.config.initial_file_limit]:
             path = self.repo_root / rf.path
             if not path.exists():
@@ -79,9 +79,22 @@ class ContextPacker:
                 text = redact_secrets(text)
             lines = text.splitlines()
             end = min(len(lines), self.config.snippet_lines)
+            payloads.append((rf.path, text, end, sha256_file(path)))
+        return payloads
+
+    def initial_read_files(self, ranked: list[RankedFile]) -> dict[str, dict[str, object]]:
+        read_files: dict[str, dict[str, object]] = {}
+        for rel_path, _text, end, digest in self._snippet_payloads(ranked):
+            ranges = [{"start": 1, "end": end}] if end >= 1 else []
+            read_files[rel_path] = {"sha256": digest, "ranges": ranges}
+        return read_files
+
+    def snippets(self, ranked: list[RankedFile]) -> str:
+        chunks: list[str] = []
+        for rel_path, text, end, digest in self._snippet_payloads(ranked):
             numbered = format_hashline_lines(text, 1, end)
             chunks.append(
-                f'<snippet path="{rf.path}" sha256="{sha256_file(path)}" lines="1-{end}" line_format="hashline">'
+                f'<snippet path="{rel_path}" sha256="{digest}" lines="1-{end}" line_format="hashline">'
                 f"\n{numbered}\n</snippet>"
             )
         return "\n\n".join(chunks)
@@ -202,9 +215,10 @@ Preferred final patch mode is a fenced `lbh-hashline-patch` block.
 
 When LBH provides `<file ... line_format="hashline">` or `<snippet ... line_format="hashline">`, each line is formatted as:
 
-- `<line-number>#<6-hex-content-hash> | <line text>`
+- `@@LINE[<line-number>,<content-hash>]@@ <line text>`
+- for example, `@@LINE[17,a1b2c3]@@ def foo():`
 
-Use those anchors in the final patch.
+Each `@@LINE[num,hash]@@` anchor is a single source of truth for both the displayed line number and its content hash. For a hashline patch, `start_line` and `start_hash` must be copied from the same starting anchor, and `end_line` and `end_hash` must be copied from the same ending anchor. Preserve the full anchor text exactly when referring to context. Never split, reformat, renumber, recompute, translate, or rewrite anchors into legacy forms such as `12#a1b2c3 | code`.
 
 Preferred hashline patch structure:
 
@@ -229,6 +243,9 @@ Rules for `lbh-hashline-patch`:
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
 - For existing-file edits, `new` must be the full replacement block text.
 - For existing-file edits, use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- Copy `start_line` and `start_hash` from the same starting `@@LINE[num,hash]@@` anchor, and copy `end_line` and `end_hash` from the same ending anchor.
+- Treat each `@@LINE[...]@@` marker as an indivisible context anchor and a single source of truth for its line number and hash. Do not split, reformat, renumber, recompute, translate, or rewrite it into any other notation.
+- Never rewrite anchors into legacy forms such as `12#a1b2c3 | code`.
 - For new files, use `create: true` with `path` and `new`; omit `start_line`, `start_hash`, `end_line`, `end_hash`, `old`, and `block_hash`.
 - New-file edits must target paths that do not already exist.
 - Do not retype the full `old` source block unless LBH explicitly asks for it.

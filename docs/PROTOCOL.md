@@ -68,20 +68,21 @@ Legacy shorthand is still accepted in manual flows:
 When LBH provides file bodies or snippets for editable context, it emits hashline-formatted lines:
 
 ```markdown
-<file path="src/foo.py" sha256="..." lines="1-3" line_format="hashline">
-1#a1b2c3 | def foo():
-2#d4e5f6 |     pass
-3#9a8b7c | 
+<file path="src/foo.py" sha256="..." lines="17-19" line_format="hashline">
+@@LINE[17,a1b2c3]@@ def foo():
+@@LINE[18,d4e5f6]@@     pass
+@@LINE[19,9a8b7c]@@
 </file>
 ```
 
 Each visible line contains:
 
-- the source line number
-- a short content hash for that exact line
-- the line text
+- a `@@LINE[num,hash]@@` anchor
+- the source line number inside that anchor
+- a short content hash for that exact line inside that anchor
+- the line text after the anchor
 
-The model must copy those anchors exactly when building a hashline patch.
+Each `@@LINE[num,hash]@@` anchor is a single source of truth for both the displayed line number and its content hash. For a hashline patch, `start_line` and `start_hash` must be copied from the same starting anchor, and `end_line` and `end_hash` must be copied from the same ending anchor. Preserve the full anchor text exactly when referring to context. Never split, reformat, renumber, recompute, translate, or rewrite anchors into legacy forms such as `12#a1b2c3 | code`.
 
 ## Preferred Final Patch Format
 
@@ -108,6 +109,9 @@ Rules:
 - Output exactly one fenced `lbh-hashline-patch` block and nothing else.
 - For existing-file edits, `new` must be the full replacement block text.
 - For existing-file edits, use the anchored span (`start_line`, `start_hash`, `end_line`, `end_hash`) as the primary source locator.
+- Copy `start_line` and `start_hash` from the same starting `@@LINE[num,hash]@@` anchor, and copy `end_line` and `end_hash` from the same ending anchor.
+- Treat each `@@LINE[...]@@` marker as an indivisible context anchor and a single source of truth for its line number and hash. Do not split, reformat, renumber, recompute, translate, or rewrite it into any other notation.
+- Never rewrite anchors into legacy forms such as `12#a1b2c3 | code`.
 - For new files, use an edit with `create: true`, `path`, and `new`; omit line anchors, `old`, and `block_hash`.
 - New-file edits must target paths that do not already exist.
 - Do not retype the full `old` source block unless LBH explicitly asks for it.
