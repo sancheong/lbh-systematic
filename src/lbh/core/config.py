@@ -89,55 +89,70 @@ class Config:
         return cls(data)
 
     def get(self, section: str, key: str, default: Any = None) -> Any:
-        return self.data.get(section, {}).get(key, default)
+        return self._section(section).get(key, default)
+
+    def _section(self, name: str) -> dict[str, Any]:
+        section = self.data.get(name, {})
+        if isinstance(section, dict):
+            return section
+        return {}
+
+    def _list(self, section: str, key: str, default: list[str]) -> list[str]:
+        return list(self.get(section, key, default))
+
+    def _int(self, section: str, key: str, default: int) -> int:
+        return int(self.get(section, key, default))
+
+    def _bool(self, section: str, key: str, default: bool) -> bool:
+        return bool(self.get(section, key, default))
 
     @property
     def include(self) -> list[str]:
-        return list(self.get("index", "include", ["**/*"]))
+        return self._list("index", "include", ["**/*"])
 
     @property
     def exclude(self) -> list[str]:
-        return list(self.get("index", "exclude", []))
+        return self._list("index", "exclude", [])
 
     @property
     def max_file_bytes(self) -> int:
-        return int(self.get("index", "max_file_bytes", 300000))
+        return self._int("index", "max_file_bytes", 300000)
 
     @property
     def content_preview_chars(self) -> int:
-        return int(self.get("index", "content_preview_chars", 3000))
+        return self._int("index", "content_preview_chars", 3000)
 
     @property
     def initial_file_limit(self) -> int:
-        return int(self.get("context", "initial_file_limit", 12))
+        return self._int("context", "initial_file_limit", 12)
 
     @property
     def snippet_lines(self) -> int:
-        return int(self.get("context", "snippet_lines", 80))
+        return self._int("context", "snippet_lines", 80)
 
     @property
     def max_prompt_chars(self) -> int:
-        return int(self.get("context", "max_prompt_chars", 60000))
+        return self._int("context", "max_prompt_chars", 60000)
 
     @property
     def max_lazy_read_lines(self) -> int:
-        return int(self.get("context", "max_lazy_read_lines", 500))
+        return self._int("context", "max_lazy_read_lines", 500)
 
     @property
     def max_tool_requests_per_round(self) -> int:
-        return int(self.get("context", "max_tool_requests_per_round", 12))
+        return self._int("context", "max_tool_requests_per_round", 12)
 
     @property
     def redact_secrets(self) -> bool:
-        return bool(self.get("security", "redact_secrets", True))
+        return self._bool("security", "redact_secrets", True)
 
     @property
     def require_read_before_modify(self) -> bool:
-        return bool(self.get("security", "require_read_before_modify", True))
+        return self._bool("security", "require_read_before_modify", True)
 
     @property
     def allow_new_files_without_read(self) -> bool:
-        return bool(self.get("security", "allow_new_files_without_read", True))
+        return self._bool("security", "allow_new_files_without_read", True)
 
     def is_excluded(self, rel_path: str) -> bool:
         rel = rel_path.replace("\\", "/")

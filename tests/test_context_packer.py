@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from lbh.context.packer import ContextPacker
 from lbh.core.config import Config
+from lbh.core.models import RankedFile
 from lbh.session.manager import SessionManager
 from lbh.workflow import create_session_for_request
 
@@ -97,3 +98,36 @@ def test_initial_prompt_empty_snippet_files_do_not_register_empty_ranges(tmp_pat
     entry = manifest["read_files"]["src/empty.py"]
     assert entry["sha256"]
     assert entry["ranges"] == []
+
+
+def test_config_defaults_preserve_context_and_security_accessors():
+    config = Config({"context": {"snippet_lines": 5}})
+
+    assert config.initial_file_limit == 12
+    assert config.snippet_lines == 5
+    assert config.max_prompt_chars == 60000
+    assert config.max_lazy_read_lines == 500
+    assert config.max_tool_requests_per_round == 12
+    assert config.redact_secrets is True
+    assert config.require_read_before_modify is True
+    assert config.allow_new_files_without_read is True
+
+
+def test_snippets_redact_secrets_by_default_and_can_disable(tmp_path):
+    (tmp_path / "src").mkdir()
+    source = tmp_path / "src" / "secret.py"
+    source.write_text('OPENAI_API_KEY="sk-test-secret-token-value"\nprint("ok")\n', encoding="utf-8")
+    ranked = [RankedFile(path="src/secret.py", score=1.0)]
+
+    redacted = ContextPacker(tmp_path, Config({})).snippets(ranked)
+    plain = ContextPacker(tmp_path, Config({"security": {"redact_secrets": False}})).snippets(ranked)
+
+    assert "[LBH_REDACTED_SECRET]" in redacted
+    assert "sk-test-secret-token-value" not in redacted
+    assert 'OPENAI_API_KEY="sk-test-secret-token-value"' in plain
+
+
+def test_build_initial_prompt_respects_configured_prompt_limit(tmp_path):
+    prompt = ContextPacker(tmp_path, Config({"context": {"max_prompt_chars": 200}})).build_initial_prompt("refactor", [])
+
+    assert prompt.endswith("[LBH_TRUNCATED: prompt exceeded max_prompt_chars]\n")

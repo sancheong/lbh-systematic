@@ -156,20 +156,9 @@ def render_repair_prompt(validation: CandidateValidation) -> str:
                 "",
             ]
         )
-    if validation.errors:
-        lines.append("Blocking failures:")
-        for i, issue in enumerate(validation.errors, start=1):
-            lines.append(f"{i}. {issue.message}")
-        lines.append("")
-    if validation.warnings:
-        lines.append("Warnings to respect:")
-        for i, issue in enumerate(validation.warnings, start=1):
-            lines.append(f"{i}. {issue.message}")
-        lines.append("")
-    lines.append("Required repair:")
-    for item in validation.repair_instruction:
-        lines.append(f"- {item}")
-    lines.append("")
+    _append_issue_section(lines, "Blocking failures:", validation.errors)
+    _append_issue_section(lines, "Warnings to respect:", validation.warnings)
+    _append_bullet_section(lines, "Required repair:", validation.repair_instruction)
     return "\n".join(lines)
 
 
@@ -222,28 +211,10 @@ def _repair_instructions(validation: CandidateValidation) -> list[str]:
     instructions = ["Revise the candidate patch only. Do not redesign the feature."]
     seen = set(instructions)
 
-    for issue in validation.errors:
-        if issue.kind == "protocol_invention":
-            _push(instructions, seen, "Remove unsupported protocol markers and keep only supported LBH diff output.")
-        elif issue.kind == "diff_validation_failed":
-            _push(instructions, seen, issue.message)
-        elif issue.kind == "apply_check_failed":
-            if validation.source_mode == "hashline":
-                _push(
-                    instructions,
-                    seen,
-                    "Make the deterministic materialized diff pass `git apply --check`.",
-                )
-            else:
-                _push(instructions, seen, "Make the patch pass `git apply --check`.")
-
-    for issue in validation.warnings:
-        if issue.kind == "markdown_bullet_suspected":
-            _push(instructions, seen, "Replace Markdown bullets inside hunks with valid unified diff lines.")
-        elif issue.kind == "raw_markdown_fence":
-            _push(instructions, seen, "Do not place prefix-free Markdown fences inside the diff body.")
-        elif issue.kind == "indented_diff_header":
-            _push(instructions, seen, "`diff --git` headers must start at column 1.")
+    for instruction in _error_repair_messages(validation):
+        _push(instructions, seen, instruction)
+    for instruction in _warning_repair_messages(validation.warnings):
+        _push(instructions, seen, instruction)
 
     _push(instructions, seen, "Preserve correct parts of the candidate.")
     if validation.source_mode == "hashline":
@@ -257,3 +228,49 @@ def _push(items: list[str], seen: set[str], value: str) -> None:
     if value not in seen:
         seen.add(value)
         items.append(value)
+
+
+def _append_issue_section(lines: list[str], heading: str, issues: list[CandidateIssue]) -> None:
+    if not issues:
+        return
+    lines.append(heading)
+    for i, issue in enumerate(issues, start=1):
+        lines.append(f"{i}. {issue.message}")
+    lines.append("")
+
+
+def _append_bullet_section(lines: list[str], heading: str, items: list[str]) -> None:
+    lines.append(heading)
+    for item in items:
+        lines.append(f"- {item}")
+    lines.append("")
+
+
+def _error_repair_messages(validation: CandidateValidation) -> list[str]:
+    messages: list[str] = []
+    for issue in validation.errors:
+        if issue.kind == "protocol_invention":
+            messages.append("Remove unsupported protocol markers and keep only supported LBH diff output.")
+        elif issue.kind == "diff_validation_failed":
+            messages.append(issue.message)
+        elif issue.kind == "apply_check_failed":
+            messages.append(_apply_check_repair_message(validation.source_mode))
+    return messages
+
+
+def _apply_check_repair_message(source_mode: str) -> str:
+    if source_mode == "hashline":
+        return "Make the deterministic materialized diff pass `git apply --check`."
+    return "Make the patch pass `git apply --check`."
+
+
+def _warning_repair_messages(warnings: list[CandidateIssue]) -> list[str]:
+    messages: list[str] = []
+    for issue in warnings:
+        if issue.kind == "markdown_bullet_suspected":
+            messages.append("Replace Markdown bullets inside hunks with valid unified diff lines.")
+        elif issue.kind == "raw_markdown_fence":
+            messages.append("Do not place prefix-free Markdown fences inside the diff body.")
+        elif issue.kind == "indented_diff_header":
+            messages.append("`diff --git` headers must start at column 1.")
+    return messages

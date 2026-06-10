@@ -100,7 +100,21 @@ class ContextPacker:
         return "\n\n".join(chunks)
 
     def build_initial_prompt(self, user_request: str, ranked: list[RankedFile]) -> str:
-        prompt = f"""
+        sections = [
+            self._session_intro(user_request),
+            self._hard_rules_section(),
+            self._available_tools_section(),
+            self._final_patch_format_section(),
+            self._repository_header_section(),
+            self._relevant_tree_section(ranked),
+            self._repo_map_section(ranked),
+            self._evidence_snippets_section(ranked),
+        ]
+        prompt = "\n\n".join(sections).strip() + "\n"
+        return self._truncate_prompt(prompt)
+
+    def _session_intro(self, user_request: str) -> str:
+        return f"""
 # LBH SESSION
 
 You are a senior code repair agent. You cannot access the local filesystem directly.
@@ -109,7 +123,10 @@ You must work only from the context provided by LBH.
 ## User Request
 
 {user_request}
+""".strip()
 
+    def _hard_rules_section(self) -> str:
+        return """
 ## Hard Rules
 
 1. Do not modify any existing file unless its content has been provided through LBH context in this session.
@@ -137,7 +154,10 @@ You must work only from the context provided by LBH.
 23. Final patch must be a valid git unified diff with `diff --git` headers.
 24. LBH automation applies a promoted patch automatically by default; only an explicit skip-apply flag should stop at patch-ready.
 25. When uncertain, request more context instead of guessing.
+""".strip()
 
+    def _available_tools_section(self) -> str:
+        return """
 ## Available LBH Tools
 
 Tool requests must be exactly one fenced `lbh-tool` block. Raw JSON by itself is invalid. A `json` fenced block is invalid. Do not write explanation text before or after the block.
@@ -165,50 +185,53 @@ Example tool request structure:
 
 Example JSON body:
 
-{{
+{
   "type": "context_request",
   "requests": [
-    {{
+    {
       "op": "READ",
       "path": "relative/path/from/repo",
-      "ranges": [{{"start": 1, "end": 120}}],
+      "ranges": [{"start": 1, "end": 120}],
       "why": "brief reason"
-    }},
-    {{
+    },
+    {
       "op": "GREP",
       "pattern": "notification_bus",
       "globs": ["src/**"],
       "max_results": 20,
       "why": "find call sites"
-    }},
-    {{
+    },
+    {
       "op": "FIND_SYMBOL",
       "query": "NotificationBus",
       "max_results": 20,
       "why": "find symbol definitions"
-    }},
-    {{
+    },
+    {
       "op": "LIST_DIR",
       "path": "src/notifications",
       "why": "inspect nearby files"
-    }},
-    {{
+    },
+    {
       "op": "DEP_GRAPH",
       "path": "src/notifications/bus.py",
       "why": "inspect import neighbors"
-    }},
-    {{
+    },
+    {
       "op": "TEST_HINTS",
       "path": "src/notifications/bus.py",
       "why": "find relevant tests"
-    }}
+    }
   ]
-}}
+}
 
 Supported ops: READ, GREP, FIND_SYMBOL, LIST_DIR, DEP_GRAPH, TEST_HINTS.
 
 Legacy shorthand is also accepted: `[READ: path]` or `[READ: path#start-end]`.
+""".strip()
 
+    def _final_patch_format_section(self) -> str:
+        return """
 ## Final Patch Format
 
 Preferred final patch mode is a fenced `lbh-hashline-patch` block.
@@ -223,19 +246,19 @@ Each `@@LINE[num,hash]@@` anchor is a single source of truth for both the displa
 Preferred hashline patch structure:
 
 ```lbh-hashline-patch
-{{
+{
   "type": "hashline_patch",
   "edits": [
-    {{
+    {
       "path": "relative/path/from/repo",
       "start_line": 10,
       "start_hash": "a1b2c3",
       "end_line": 12,
       "end_hash": "d4e5f6",
       "new": "replacement block text"
-    }}
+    }
   ]
-}}
+}
 ```
 
 Rules for `lbh-hashline-patch`:
@@ -303,7 +326,10 @@ diff --git a/path b/path
 +++ b/path
 @@ ...
 ```
+""".strip()
 
+    def _repository_header_section(self) -> str:
+        return f"""
 ## Repository Header
 
 <repo>
@@ -311,23 +337,34 @@ root_name: {self.repo_root.name}
 head: {self.repo_head()}
 package_manager_hint: {self.package_manager_hint()}
 </repo>
+""".strip()
 
+    def _relevant_tree_section(self, ranked: list[RankedFile]) -> str:
+        return f"""
 ## Relevant Directory Tree
 
 <tree>
 {self.relevant_tree(ranked)}
 </tree>
+""".strip()
 
+    def _repo_map_section(self, ranked: list[RankedFile]) -> str:
+        return f"""
 ## Repo Map
 
 <repomap>
 {self.repo_map(ranked)}
 </repomap>
+""".strip()
 
+    def _evidence_snippets_section(self, ranked: list[RankedFile]) -> str:
+        return f"""
 ## Evidence Snippets
 
 {self.snippets(ranked)}
-""".strip() + "\n"
-        if len(prompt) > self.config.max_prompt_chars:
-            prompt = prompt[: self.config.max_prompt_chars] + "\n\n[LBH_TRUNCATED: prompt exceeded max_prompt_chars]\n"
-        return prompt
+""".strip()
+
+    def _truncate_prompt(self, prompt: str) -> str:
+        if len(prompt) <= self.config.max_prompt_chars:
+            return prompt
+        return prompt[: self.config.max_prompt_chars] + "\n\n[LBH_TRUNCATED: prompt exceeded max_prompt_chars]\n"

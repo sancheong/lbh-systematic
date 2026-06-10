@@ -103,6 +103,25 @@ def test_materialize_hashline_patch_rejects_existing_create_target(tmp_path: Pat
         raise AssertionError("expected HashLinePatchError")
 
 
+def test_materialize_hashline_patch_rejects_create_edit_with_line_anchors(tmp_path: Path):
+    edit = HashLinePatchEdit(
+        path="docs/new.md",
+        start_line=1,
+        start_hash="deadbe",
+        end_line=1,
+        end_hash="deadbe",
+        new="# New Doc\n",
+        create=True,
+    )
+
+    try:
+        materialize_hashline_patch(tmp_path, [edit])
+    except HashLinePatchError as exc:
+        assert "must not include line anchors" in str(exc)
+    else:
+        raise AssertionError("expected HashLinePatchError")
+
+
 def test_materialize_hashline_patch_rejects_stale_hash(tmp_path: Path):
     repo = tmp_path
     path = repo / "sample.py"
@@ -121,6 +140,29 @@ def test_materialize_hashline_patch_rejects_stale_hash(tmp_path: Path):
         materialize_hashline_patch(repo, [edit])
     except HashLinePatchError as exc:
         assert "start hash mismatch" in str(exc)
+    else:
+        raise AssertionError("expected HashLinePatchError")
+
+
+def test_materialize_hashline_patch_rejects_old_text_mismatch(tmp_path: Path):
+    repo = tmp_path
+    path = repo / "sample.py"
+    path.write_text("def foo():\n    pass\n", encoding="utf-8")
+
+    edit = HashLinePatchEdit(
+        path="sample.py",
+        start_line=1,
+        start_hash=short_line_hash("def foo():"),
+        end_line=2,
+        end_hash=short_line_hash("    pass"),
+        old="def foo():\n    return 1",
+        new='def foo():\n    return "ok"',
+    )
+
+    try:
+        materialize_hashline_patch(repo, [edit])
+    except HashLinePatchError as exc:
+        assert "old text mismatch" in str(exc)
     else:
         raise AssertionError("expected HashLinePatchError")
 
