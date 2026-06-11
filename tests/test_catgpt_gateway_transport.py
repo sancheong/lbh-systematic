@@ -114,6 +114,73 @@ def _init_gateway_repo(tmp_path: Path, monkeypatch):
     return manager
 
 
+def test_gateway_loop_small_request_uses_existing_transport_flow(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
+
+    transport = _FakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request="fix a",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=3,
+    )
+
+    assert result.status == "applied"
+    assert transport.calls[0][0] == "start"
+    assert transport.calls[1][0] == "send"
+    manifest = manager.load_manifest(result.session_root)
+    assert manifest["plan"] is None
+
+
+def test_gateway_loop_routes_broad_request_to_plan_mode_without_transport(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
+
+    transport = _FakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request="Overhaul the request routing architecture",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=3,
+    )
+
+    assert result.status == "plan_ready"
+    assert result.rounds == 0
+    assert result.message == "Plan mode ready with 1 task prompt file(s)."
+    assert transport.calls == []
+
+    manifest = manager.load_manifest(result.session_root)
+    plan = manifest["plan"]
+    assert plan["schema"] == "lbh.plan.v1"
+    assert plan["prompt_files"] == [f".lbh/plans/{result.session_root.name}/prompts/task_prompt_001.md"]
+    assert (tmp_path / plan["prompt_files"][0]).read_text(encoding="utf-8") == "initial prompt"
+    assert not (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "b\n"
+
+
+def test_gateway_loop_request_file_bypasses_reclassification_and_sends_exact_prompt(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
+    prompt_file = tmp_path / "task_prompt.md"
+    prompt_text = "Overhaul the request routing architecture"
+    prompt_file.write_text(prompt_text, encoding="utf-8")
+
+    transport = _FakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request_file=prompt_file,
+        request_label="task prompt execution",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=3,
+    )
+
+    assert result.status == "applied"
+    assert transport.calls[0] == ("start", prompt_text)
+    manifest = manager.load_manifest(result.session_root)
+    assert manifest["user_request"] == "task prompt execution"
+    assert manifest["plan"] is None
+
+
 def test_gateway_loop_applies_patch_by_default_after_patch_ready(tmp_path, monkeypatch):
     manager = _init_gateway_repo(tmp_path, monkeypatch)
 

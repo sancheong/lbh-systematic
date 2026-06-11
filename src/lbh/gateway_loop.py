@@ -6,7 +6,13 @@ from pathlib import Path
 from lbh.core.config import Config
 from lbh.session.manager import SessionManager
 from lbh.transport.catgpt_gateway import CatGptGatewayTransport
-from lbh.workflow import ResponseOutcome, apply_patch_ready, create_session_for_request, process_response_file
+from lbh.workflow import (
+    ResponseOutcome,
+    apply_patch_ready,
+    create_session_for_prompt,
+    create_session_for_request,
+    process_response_file,
+)
 
 
 @dataclass(frozen=True)
@@ -22,7 +28,9 @@ class GatewayLoopResult:
 def run_gateway_loop(
     repo: Path,
     *,
-    request: str,
+    request: str | None = None,
+    request_file: Path | None = None,
+    request_label: str | None = None,
     base_url: str,
     api_key: str = "dummy123",
     max_rounds: int = 20,
@@ -30,13 +38,35 @@ def run_gateway_loop(
     skip_apply: bool = False,
     transport: CatGptGatewayTransport | None = None,
 ) -> GatewayLoopResult:
+    if (request is None) == (request_file is None):
+        raise ValueError("provide exactly one of request or request_file")
+
     config = Config.load(repo)
     manager = SessionManager(repo)
-    session_root, initial_prompt = create_session_for_request(repo, request, config=config, limit=limit)
+    if request_file is not None:
+        prompt_path = request_file if request_file.is_absolute() else (Path.cwd() / request_file).resolve()
+        prompt_text = prompt_path.read_text(encoding="utf-8")
+        session_root, initial_prompt = create_session_for_prompt(
+            repo,
+            prompt_text,
+            request_label=request_label or f"prompt-file:{prompt_path.name}",
+        )
+    else:
+        session_root, initial_prompt = create_session_for_request(repo, request or "", config=config, limit=limit)
+        manifest = manager.load_manifest(session_root)
+        plan = manifest.get("plan")
+        if plan:
+            prompt_files = plan.get("prompt_files") or []
+            return GatewayLoopResult(
+                session_root=session_root,
+                status="plan_ready",
+                rounds=0,
+                message=f"Plan mode ready with {len(prompt_files)} task prompt file(s).",
+            )
+
     transport = transport or CatGptGatewayTransport(base_url=base_url, api_key=api_key)
     started = transport.start_session(initial_prompt.read_text(encoding="utf-8"))
     _record_transport_session(manager, session_root, base_url, started.session_id)
-
     response_file = _write_response_file(manager, session_root, 1, started.response.text, started.response.metadata)
     outcome = process_response_file(repo, session_root, response_file)
     if outcome.return_code == 1:

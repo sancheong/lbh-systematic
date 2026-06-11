@@ -108,9 +108,14 @@ def cmd_respond(args: argparse.Namespace) -> int:
 def cmd_gateway_run(args: argparse.Namespace) -> int:
     repo = find_repo_root()
     ensure_index(repo)
+    if bool(args.request) == bool(args.request_file):
+        print("Provide exactly one of request or --request-file.", file=sys.stderr)
+        return 2
     result = run_gateway_loop(
         repo,
         request=args.request,
+        request_file=Path(args.request_file) if args.request_file else None,
+        request_label=args.request_label,
         base_url=args.base_url,
         api_key=args.api_key,
         max_rounds=args.max_rounds,
@@ -345,7 +350,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_doctor)
 
     sp = sub.add_parser("gateway-run", help="run the manual prompt/response loop through CatGPT-Gateway")
-    sp.add_argument("request")
+    sp.add_argument("request", nargs="?")
+    sp.add_argument("--request-file", help="read the initial request or immutable task prompt from a file")
+    sp.add_argument("--request-label", help="session label to use with --request-file")
     sp.add_argument("--base-url", default="http://localhost:8000")
     sp.add_argument("--api-key", default="dummy123")
     sp.add_argument("--limit", type=int, default=None)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lbh.context.packer import ContextPacker
 from lbh.core.config import Config
+from lbh.core.request_classification import RequestClassification, classify_patch_request
 from lbh.core.fs import write_text_exact
 from lbh.indexer.builder import RepoIndexer
 from lbh.patch.apply import git_apply, git_apply_check
@@ -34,6 +35,7 @@ from lbh.session.manager import SessionManager
 class AskResult:
     session_root: Path
     initial_prompt: Path
+    request_classification: RequestClassification = field(default_factory=RequestClassification.small)
 
 
 @dataclass
@@ -67,6 +69,7 @@ def rebuild_index(repo: Path, *, json_mode: bool = False) -> dict[str, int]:
 
 def ask_request(repo: Path, request: str, *, limit: int | None = None) -> AskResult:
     config = Config.load(repo)
+    request_classification = classify_patch_request(request, config)
     ranked = SearchRanker(repo).rank(request, limit=limit or config.initial_file_limit)
     manager = SessionManager(repo)
     session = manager.create(request, ranked=[item.__dict__ for item in ranked])
@@ -74,7 +77,13 @@ def ask_request(repo: Path, request: str, *, limit: int | None = None) -> AskRes
     prompt = packer.build_initial_prompt(request, ranked)
     session.initial_prompt.write_text(prompt, encoding="utf-8")
     manager.register_read_files(session.root, packer.initial_read_files(ranked))
-    return AskResult(session_root=session.root, initial_prompt=session.initial_prompt)
+    if request_classification.is_broad_or_multi_component:
+        manager.create_plan_artifacts(session.root, {"task_prompt.md": prompt})
+    return AskResult(
+        session_root=session.root,
+        initial_prompt=session.initial_prompt,
+        request_classification=request_classification,
+    )
 
 
 def create_session_for_request(
@@ -85,6 +94,7 @@ def create_session_for_request(
     limit: int | None = None,
 ) -> tuple[Path, Path]:
     if config is not None:
+        request_classification = classify_patch_request(request, config)
         ranked = SearchRanker(repo).rank(request, limit=limit or config.initial_file_limit)
         manager = SessionManager(repo)
         session = manager.create(request, ranked=[item.__dict__ for item in ranked])
@@ -92,9 +102,23 @@ def create_session_for_request(
         prompt = packer.build_initial_prompt(request, ranked)
         session.initial_prompt.write_text(prompt, encoding="utf-8")
         manager.register_read_files(session.root, packer.initial_read_files(ranked))
+        if request_classification.is_broad_or_multi_component:
+            manager.create_plan_artifacts(session.root, {"task_prompt.md": prompt})
         return session.root, session.initial_prompt
     result = ask_request(repo, request, limit=limit)
     return result.session_root, result.initial_prompt
+
+
+def create_session_for_prompt(
+    repo: Path,
+    prompt_text: str,
+    *,
+    request_label: str = "prompt file execution",
+) -> tuple[Path, Path]:
+    manager = SessionManager(repo)
+    session = manager.create(request_label, ranked=[])
+    session.initial_prompt.write_text(prompt_text, encoding="utf-8")
+    return session.root, session.initial_prompt
 
 
 def process_response_file(repo: Path, session_root: Path, response_file: Path) -> ResponseOutcome:

@@ -55,6 +55,25 @@ max_prompt_chars = 60000
 max_lazy_read_lines = 500
 max_tool_requests_per_round = 12
 
+[request_classification]
+component_limit = 1
+broad_terms = [
+  "all files",
+  "architecture",
+  "codebase-wide",
+  "design and implement",
+  "end-to-end",
+  "entire",
+  "full implementation",
+  "large refactor",
+  "migrate",
+  "multi-component",
+  "overhaul",
+  "redesign",
+  "rewrite"
+]
+component_separators = [",", ";", "\\n-", "\\n*", " and "]
+
 [security]
 redact_secrets = true
 require_read_before_modify = true
@@ -141,6 +160,18 @@ class Config:
     @property
     def max_tool_requests_per_round(self) -> int:
         return self._int("context", "max_tool_requests_per_round", 12)
+
+    @property
+    def request_classification_component_limit(self) -> int:
+        return self._int("request_classification", "component_limit", 1)
+
+    @property
+    def request_classification_broad_terms(self) -> list[str]:
+        return self._list("request_classification", "broad_terms", [])
+
+    @property
+    def request_classification_component_separators(self) -> list[str]:
+        return self._list("request_classification", "component_separators", [])
 
     @property
     def redact_secrets(self) -> bool:

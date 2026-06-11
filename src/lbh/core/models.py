@@ -100,6 +100,15 @@ class DiffValidationResult:
 
 
 @dataclass
+class PlanArtifactPaths:
+    root: Path
+    immutable_prompts: Path
+    mutable_state: Path
+    summary: Path
+    bootstrap_source: Path | None = None
+
+
+@dataclass
 class SessionPaths:
     root: Path
     request: Path

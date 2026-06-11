@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from lbh.core.models import SessionPaths
-from lbh.core.paths import sessions_dir
+from lbh.core.models import PlanArtifactPaths, SessionPaths
+from lbh.core.paths import lbh_dir, sessions_dir
 
 
 def slugify(text: str, limit: int = 40) -> str:
@@ -21,6 +21,11 @@ class SessionManager:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
         sessions_dir(repo_root).mkdir(parents=True, exist_ok=True)
+        self.plans_root.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def plans_root(self) -> Path:
+        return lbh_dir(self.repo_root) / "plans"
 
     def create(self, user_request: str, ranked: list[dict[str, Any]] | None = None) -> SessionPaths:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -43,6 +48,7 @@ class SessionManager:
             "candidates": [],
             "patch": None,
             "automation": None,
+            "plan": None,
             "events": [],
         }
         self.write_manifest(paths.root, manifest)
@@ -98,3 +104,68 @@ class SessionManager:
         manifest.setdefault("context_appends", []).append(out.name)
         self.write_manifest(session_root, manifest)
         return out
+
+    def plan_artifact_paths(self, plan_id: str) -> PlanArtifactPaths:
+        root = self.plans_root / plan_id
+        return PlanArtifactPaths(
+            root=root,
+            immutable_prompts=root / "prompts",
+            mutable_state=root / "state.json",
+            summary=root / "summary.md",
+            bootstrap_source=self.repo_root / "refactoring.md",
+        )
+
+    def create_plan_artifacts(self, session_root: str | Path, prompt_files: dict[str, str]) -> PlanArtifactPaths:
+        manifest = self.load_manifest(session_root)
+        plan_id = str(manifest["session_id"])
+        paths = self.plan_artifact_paths(plan_id)
+        existing_plan = manifest.get("plan")
+
+        if existing_plan and paths.immutable_prompts.exists():
+            paths.mutable_state.parent.mkdir(parents=True, exist_ok=True)
+            if not paths.mutable_state.exists():
+                paths.mutable_state.write_text(
+                    json.dumps({"schema": "lbh.plan.state.v1", "status": "planned"}, indent=2),
+                    encoding="utf-8",
+                )
+            if not paths.summary.exists():
+                paths.summary.write_text("", encoding="utf-8")
+            return paths
+
+        paths.immutable_prompts.mkdir(parents=True, exist_ok=False)
+        split_prompt_files: dict[str, str] = {}
+        for name, text in prompt_files.items():
+            if Path(name).name != name:
+                raise ValueError(f"plan prompt file name must be relative and flat: {name}")
+            split_prompt_files.update(self._split_plan_prompt(name, text))
+        for name, text in split_prompt_files.items():
+            (paths.immutable_prompts / name).write_text(text, encoding="utf-8")
+        paths.mutable_state.write_text(json.dumps({"schema": "lbh.plan.state.v1", "status": "planned"}, indent=2), encoding="utf-8")
+        paths.summary.write_text("", encoding="utf-8")
+        plan_entry: dict[str, Any] = {
+            "schema": "lbh.plan.v1",
+            "plan_id": plan_id,
+            "root": paths.root.relative_to(self.repo_root).as_posix(),
+            "immutable_prompts_dir": paths.immutable_prompts.relative_to(self.repo_root).as_posix(),
+            "state": paths.mutable_state.relative_to(self.repo_root).as_posix(),
+            "summary": paths.summary.relative_to(self.repo_root).as_posix(),
+            "prompt_files": [
+                (paths.immutable_prompts / name).relative_to(self.repo_root).as_posix()
+                for name in split_prompt_files
+            ],
+        }
+        if paths.bootstrap_source and paths.bootstrap_source.exists():
+            plan_entry["bootstrap_source"] = paths.bootstrap_source.relative_to(self.repo_root).as_posix()
+            plan_entry["bootstrap_temporary"] = True
+        manifest["plan"] = plan_entry
+        self.write_manifest(session_root, manifest)
+        return paths
+
+    def _split_plan_prompt(self, name: str, text: str) -> dict[str, str]:
+        stem = Path(name).stem or "task_prompt"
+        chunks = [chunk.strip() for chunk in text.split("\n---\n") if chunk.strip()]
+        if not chunks:
+            chunks = [text]
+        if len(chunks) == 1:
+            return {f"{stem}_001.md": chunks[0]}
+        return {f"{stem}_{index:03d}.md": chunk for index, chunk in enumerate(chunks, start=1)}
