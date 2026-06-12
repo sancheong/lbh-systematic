@@ -74,6 +74,9 @@ broad_terms = [
 ]
 component_separators = [",", ";", "\\n-", "\\n*", " and "]
 
+[experimental]
+enable_broad_request_planning = false
+
 [security]
 redact_secrets = true
 require_read_before_modify = true
@@ -172,6 +175,10 @@ class Config:
     @property
     def request_classification_component_separators(self) -> list[str]:
         return self._list("request_classification", "component_separators", [])
+
+    @property
+    def enable_broad_request_planning(self) -> bool:
+        return self._bool("experimental", "enable_broad_request_planning", False)
 
     @property
     def redact_secrets(self) -> bool:

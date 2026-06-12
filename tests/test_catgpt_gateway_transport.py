@@ -24,6 +24,17 @@ class _FakeHttpResponse:
         return False
 
 
+def _enable_broad_planning(repo_root: Path):
+    config_path = repo_root / ".lbh" / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "enable_broad_request_planning = false",
+            "enable_broad_request_planning = true",
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_gateway_transport_start_session_and_send(monkeypatch):
     calls = []
 
@@ -135,6 +146,7 @@ def test_gateway_loop_small_request_uses_existing_transport_flow(tmp_path, monke
 
 def test_gateway_loop_routes_broad_request_to_plan_mode_without_transport(tmp_path, monkeypatch):
     manager = _init_gateway_repo(tmp_path, monkeypatch)
+    _enable_broad_planning(tmp_path)
 
     transport = _FakeTransport()
     result = run_gateway_loop(

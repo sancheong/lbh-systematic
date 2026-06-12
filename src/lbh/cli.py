@@ -14,6 +14,8 @@ from lbh.core.fs import format_numbered_lines, read_text, redact_secrets
 from lbh.core.paths import find_repo_root, index_dir, resolve_repo_path
 from lbh.gateway_loop import run_gateway_loop
 from lbh.indexer.builder import RepoIndexer
+from lbh.preflight import run_preflight
+from lbh.run_command import run_request
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
 from lbh.workflow import apply_patch_file, ask_request, process_response_file
@@ -290,6 +292,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_preflight(args: argparse.Namespace) -> int:
+    result = run_preflight(args.target)
+    print(result.to_json())
+    return 0 if result.ok else 4
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    result = run_request(
+        request=args.request,
+        request_file=args.request_file,
+        request_label=args.request_label,
+        target=args.target,
+        limit=args.limit,
+        max_rounds=args.max_rounds,
+        skip_apply=args.skip_apply,
+    )
+    print(result.to_json())
+    return 0 if result.ok else 4
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="lbh", description="Local-Browser-Hybrid context broker")
     p.add_argument("--version", action="version", version=f"lbh {__version__}")
@@ -348,6 +370,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("doctor", help="check LBH project health")
     sp.set_defaults(func=cmd_doctor)
+
+    sp = sub.add_parser("preflight", help="run fixed LBH readiness checks and print JSON")
+    sp.add_argument("--target", help="target repository path; defaults to the current working directory")
+    sp.set_defaults(func=cmd_preflight)
+
+    sp = sub.add_parser("run", help="run preflight, prepare the repo if needed, then execute gateway-run")
+    sp.add_argument("request", nargs="?")
+    sp.add_argument("--request-file", help="read the initial request or immutable task prompt from a file")
+    sp.add_argument("--request-label", help="session label to use with --request-file")
+    sp.add_argument("--target", help="target repository path; defaults to the current working directory")
+    sp.add_argument("--limit", type=int, default=None)
+    sp.add_argument("--max-rounds", type=int, default=20)
+    group = sp.add_mutually_exclusive_group()
+    group.add_argument("--skip-apply", dest="skip_apply", action="store_true", help="stop when patch.diff is ready instead of applying it")
+    group.add_argument("--check", dest="skip_apply", action="store_true", help=argparse.SUPPRESS)
+    sp.set_defaults(func=cmd_run)
 
     sp = sub.add_parser("gateway-run", help="run the manual prompt/response loop through CatGPT-Gateway")
     sp.add_argument("request", nargs="?")

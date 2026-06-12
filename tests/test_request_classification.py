@@ -14,6 +14,17 @@ class FakeRanker:
         return []
 
 
+def _enable_broad_planning(repo_root):
+    config_path = repo_root / ".lbh" / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            "enable_broad_request_planning = false",
+            "enable_broad_request_planning = true",
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_classifies_small_request_for_normal_gateway_run():
     result = classify_patch_request("Fix typo in src/lbh/workflow.py")
 
@@ -27,6 +38,31 @@ def test_classifies_small_request_for_normal_gateway_run():
 def test_classifies_broad_request_by_contract_terms():
     result = classify_patch_request("Overhaul the request routing architecture")
 
+    assert result.kind is RequestClassificationKind.SMALL
+    assert result.is_broad_or_multi_component is False
+    assert result.uses_normal_gateway_run is True
+    assert result.reasons == ()
+
+
+def test_classifies_multi_component_request_by_component_limit():
+    result = classify_patch_request("Update parser, CLI, and prompt generation")
+
+    assert result.kind is RequestClassificationKind.SMALL
+    assert result.is_broad_or_multi_component is False
+    assert result.uses_normal_gateway_run is True
+    assert result.component_count == 1
+    assert result.reasons == ()
+
+
+def test_can_enable_experimental_broad_request_planning_via_config():
+    config = Config(
+        {
+            "experimental": {"enable_broad_request_planning": True},
+        }
+    )
+
+    result = classify_patch_request("Overhaul the request routing architecture", config)
+
     assert result.kind is RequestClassificationKind.BROAD
     assert result.is_broad_or_multi_component is True
     assert result.uses_normal_gateway_run is False
@@ -34,13 +70,19 @@ def test_classifies_broad_request_by_contract_terms():
     assert "broad_term:overhaul" in result.reasons
 
 
-def test_classifies_multi_component_request_by_component_limit():
-    result = classify_patch_request("Update parser, CLI, and prompt generation")
+def test_can_enable_experimental_multi_component_planning_via_config():
+    config = Config(
+        {
+            "experimental": {"enable_broad_request_planning": True},
+        }
+    )
+
+    result = classify_patch_request("Update parser, CLI, and prompt generation", config)
 
     assert result.kind is RequestClassificationKind.MULTI_COMPONENT
     assert result.is_broad_or_multi_component is True
     assert result.uses_normal_gateway_run is False
-    assert result.component_count > Config({}).request_classification_component_limit
+    assert result.component_count > config.request_classification_component_limit
     assert result.reasons == ("component_count>1",)
 
 
@@ -50,8 +92,8 @@ def test_ask_request_exposes_classification_for_later_routing(tmp_path, monkeypa
 
     result = ask_request(tmp_path, "Update parser, CLI, and prompt generation")
 
-    assert result.request_classification.kind is RequestClassificationKind.MULTI_COMPONENT
-    assert result.request_classification.is_broad_or_multi_component is True
+    assert result.request_classification.kind is RequestClassificationKind.SMALL
+    assert result.request_classification.is_broad_or_multi_component is False
 
 
 def test_small_request_does_not_create_plan_layout(tmp_path, monkeypatch):
@@ -67,6 +109,7 @@ def test_small_request_does_not_create_plan_layout(tmp_path, monkeypatch):
 
 def test_medium_to_large_request_creates_separated_plan_artifacts(tmp_path, monkeypatch):
     init_config(tmp_path)
+    _enable_broad_planning(tmp_path)
     monkeypatch.setattr("lbh.workflow.SearchRanker", FakeRanker)
     (tmp_path / "refactoring.md").write_text("bootstrap only", encoding="utf-8")
 
@@ -97,6 +140,7 @@ def test_medium_to_large_request_creates_separated_plan_artifacts(tmp_path, monk
 
 def test_plan_prompt_splitting_is_idempotent_and_immutable(tmp_path, monkeypatch):
     init_config(tmp_path)
+    _enable_broad_planning(tmp_path)
     monkeypatch.setattr("lbh.workflow.SearchRanker", FakeRanker)
 
     result = ask_request(tmp_path, "Update parser, CLI, and prompt generation")

@@ -37,6 +37,8 @@ class RequestClassification:
 
 def classify_patch_request(request: str, config: Config | None = None) -> RequestClassification:
     cfg = config or Config({})
+    if not cfg.enable_broad_request_planning:
+        return RequestClassification.small()
     raw = request.lower()
     normalized = " ".join(raw.split())
     component_count = _estimate_component_count(raw, cfg.request_classification_component_separators)
