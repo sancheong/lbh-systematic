@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lbh.core.config import Config
-from lbh.reviewer import build_reviewer_prompt, build_writer_feedback_prompt, next_review_index, review_artifacts
+from lbh.reviewer import (
+    build_explore_feedback_prompt,
+    build_reviewer_prompt,
+    build_scope_reviewer_prompt,
+    build_writer_feedback_prompt,
+    next_review_index,
+    review_artifacts,
+    review_suggests_discard_and_explore,
+)
 from lbh.session.manager import SessionManager
 from lbh.transport.catgpt_gateway import CatGptGatewayTransport
 from lbh.workflow import (
@@ -89,6 +98,9 @@ def run_gateway_loop(
     review_error = _review_failed_candidate_if_needed(manager, session_root, transport, base_url)
     if review_error:
         return GatewayLoopResult(session_root=session_root, status="blocked", rounds=1, response_file=response_file, message=review_error)
+    review_error = _review_promoted_candidate_if_needed(manager, session_root, transport, base_url)
+    if review_error:
+        return GatewayLoopResult(session_root=session_root, status="blocked", rounds=1, response_file=response_file, message=review_error)
 
     for round_num in range(2, max_rounds + 1):
         patch_file = _promoted_patch_file(manager, session_root)
@@ -120,6 +132,9 @@ def run_gateway_loop(
                 message=outcome.error_message or f"Unexpected processing outcome: {outcome.kind}",
             )
         review_error = _review_failed_candidate_if_needed(manager, session_root, transport, base_url)
+        if review_error:
+            return GatewayLoopResult(session_root=session_root, status="blocked", rounds=round_num, response_file=response_file, message=review_error)
+        review_error = _review_promoted_candidate_if_needed(manager, session_root, transport, base_url)
         if review_error:
             return GatewayLoopResult(session_root=session_root, status="blocked", rounds=round_num, response_file=response_file, message=review_error)
 
@@ -370,6 +385,131 @@ def _review_failed_candidate_if_needed(
         return f"Reviewer failed for {candidate.get('path')}: {exc}"
 
 
+def _review_promoted_candidate_if_needed(
+    manager: SessionManager,
+    session_root: Path,
+    transport: CatGptGatewayTransport,
+    base_url: str,
+) -> str | None:
+    manifest = manager.load_manifest(session_root)
+    if not _scope_review_required(manifest):
+        return None
+    candidate = _latest_unreviewed_promoted_candidate(manifest)
+    if candidate is None:
+        return None
+    try:
+        prompt = build_scope_reviewer_prompt(session_root=session_root, manifest=manifest, candidate_entry=candidate)
+        artifacts = review_artifacts(session_root, next_review_index(session_root))
+        artifacts.prompt.write_text(prompt, encoding="utf-8")
+
+        response, reviewer_session_id, reviewer_thread_url = _send_reviewer_prompt(
+            manager=manager,
+            session_root=session_root,
+            manifest=manifest,
+            transport=transport,
+            base_url=base_url,
+            prompt=prompt,
+        )
+
+        artifacts.response.write_text(response.text, encoding="utf-8")
+        discard = review_suggests_discard_and_explore(response.text) or _local_scope_looks_too_narrow(
+            session_root,
+            manifest,
+            candidate,
+            response.text,
+        )
+        decision = "discard_and_explore" if discard else "promote"
+
+        manifest = manager.load_manifest(session_root)
+        candidates = manifest.get("candidates") or []
+        for entry in candidates:
+            if isinstance(entry, dict) and entry.get("path") == candidate.get("path"):
+                entry["scope_review_prompt"] = artifacts.prompt.relative_to(session_root).as_posix()
+                entry["scope_review_response"] = artifacts.response.relative_to(session_root).as_posix()
+                entry["scope_decision"] = decision
+                entry["reviewer_transport_session_id"] = reviewer_session_id
+                entry["reviewer_transport_session_url"] = reviewer_thread_url
+                if discard:
+                    entry["status"] = "candidate_underscoped"
+                    entry["ok"] = False
+                    entry["promoted_to_patch"] = False
+                    explore_prompt = build_explore_feedback_prompt(
+                        reviewer_response=response.text,
+                        candidate_rel=str(candidate["path"]),
+                        reviewer_response_rel=artifacts.response.relative_to(session_root).as_posix(),
+                    )
+                    artifacts.writer_feedback.write_text(explore_prompt, encoding="utf-8")
+                    entry["explore_prompt"] = artifacts.writer_feedback.relative_to(session_root).as_posix()
+                break
+
+        reviewer = manifest.setdefault("reviewer", {})
+        reviewer.setdefault("transport", "catgpt-gateway")
+        reviewer.setdefault("transport_base_url", base_url)
+        reviewer["transport_session_id"] = reviewer_session_id
+        reviewer["transport_session_url"] = reviewer_thread_url
+        reviewer.setdefault("reviews", []).append(
+            {
+                "candidate": candidate.get("path"),
+                "prompt": artifacts.prompt.relative_to(session_root).as_posix(),
+                "response": artifacts.response.relative_to(session_root).as_posix(),
+                "decision": decision,
+            }
+        )
+        if discard:
+            manifest["patch"] = None
+            patch_file = session_root / "patch.diff"
+            if patch_file.exists():
+                patch_file.unlink()
+        manager.write_manifest(session_root, manifest)
+        manager.append_event(
+            session_root,
+            {
+                "type": "reviewer_scope_feedback",
+                "candidate": candidate.get("path"),
+                "decision": decision,
+                "reviewer_transport_session_id": reviewer_session_id,
+                "reviewer_transport_session_url": reviewer_thread_url,
+                "response": artifacts.response.relative_to(session_root).as_posix(),
+                "writer_feedback_prompt": artifacts.writer_feedback.relative_to(session_root).as_posix() if discard else "",
+            },
+        )
+        return None
+    except Exception as exc:
+        manager.append_event(session_root, {"type": "reviewer_failed", "candidate": candidate.get("path"), "message": str(exc)})
+        return f"Reviewer failed for promoted {candidate.get('path')}: {exc}"
+
+
+def _send_reviewer_prompt(
+    *,
+    manager: SessionManager,
+    session_root: Path,
+    manifest: dict[str, Any],
+    transport: CatGptGatewayTransport,
+    base_url: str,
+    prompt: str,
+):
+    reviewer = manifest.get("reviewer")
+    if isinstance(reviewer, dict) and isinstance(reviewer.get("transport_session_id"), str):
+        response = transport.send(str(reviewer["transport_session_id"]), prompt)
+        reviewer_session_id = str(reviewer["transport_session_id"])
+        reviewer_thread_url = (response.metadata or {}).get("thread_url") or str(reviewer.get("transport_session_url") or "")
+        return response, reviewer_session_id, reviewer_thread_url
+
+    started = transport.start_session(prompt)
+    response = started.response
+    reviewer_session_id = started.session_id
+    reviewer_thread_url = (response.metadata or {}).get("thread_url") or ""
+    manifest["reviewer"] = {
+        "transport": "catgpt-gateway",
+        "transport_base_url": base_url,
+        "transport_session_id": reviewer_session_id,
+        "transport_session_url": reviewer_thread_url,
+        "reviews": [],
+    }
+    manager.write_manifest(session_root, manifest)
+    return response, reviewer_session_id, reviewer_thread_url
+
+
 def _latest_unreviewed_failed_candidate(manifest: dict[str, Any]) -> dict[str, Any] | None:
     candidates = manifest.get("candidates")
     if not isinstance(candidates, list) or not candidates:
@@ -382,6 +522,73 @@ def _latest_unreviewed_failed_candidate(manifest: dict[str, Any]) -> dict[str, A
     if latest.get("writer_feedback_prompt"):
         return None
     return latest
+
+
+def _latest_unreviewed_promoted_candidate(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = manifest.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return None
+    latest = candidates[-1]
+    if not isinstance(latest, dict):
+        return None
+    if latest.get("promoted_to_patch") is not True or latest.get("ok") is not True:
+        return None
+    if latest.get("scope_decision"):
+        return None
+    return latest
+
+
+def _scope_review_required(manifest: dict[str, Any]) -> bool:
+    request = str(manifest.get("user_request") or "").lower()
+    if not request:
+        return False
+    terms = (
+        "overall",
+        "entire",
+        "project-wide",
+        "codebase-wide",
+        "large refactor",
+        "overhaul",
+        "architecture",
+        "전반",
+        "전체",
+        "프로젝트",
+        "대규모",
+        "구조",
+    )
+    return any(term in request for term in terms)
+
+
+def _local_scope_looks_too_narrow(
+    session_root: Path,
+    manifest: dict[str, Any],
+    candidate: dict[str, Any],
+    review_text: str,
+) -> bool:
+    normalized_review = " ".join(review_text.lower().split())
+    if any(term in normalized_review for term in ("promote", "sufficient", "adequate", "충분", "적절")):
+        return False
+    promotion_rel = str(candidate.get("promotion") or "")
+    promotion = _read_json(session_root / promotion_rel) if promotion_rel else {}
+    modified_files = promotion.get("modified_files") if isinstance(promotion, dict) else []
+    warnings = promotion.get("warnings") if isinstance(promotion, dict) else []
+    if not isinstance(modified_files, list):
+        modified_files = []
+    if not isinstance(warnings, list):
+        warnings = []
+    if len(modified_files) <= 1 and any("no targeted tests found" in str(warning) for warning in warnings):
+        return True
+    request = str(manifest.get("user_request") or "")
+    strong_broad = any(term in request for term in ("전반", "전체", "프로젝트를 전반", "entire", "project-wide", "codebase-wide"))
+    return strong_broad and len(modified_files) <= 1
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _is_expected_outcome(outcome: ResponseOutcome) -> bool:
@@ -398,7 +605,11 @@ def _next_outbound_artifact(manager: SessionManager, session_root: Path) -> Path
             candidates.append(session_root / name)
     last_candidate = manifest.get("candidates", [])
     if isinstance(last_candidate, list) and last_candidate:
-        repair_prompt = last_candidate[-1].get("writer_feedback_prompt") or last_candidate[-1].get("repair_prompt")
+        repair_prompt = (
+            last_candidate[-1].get("explore_prompt")
+            or last_candidate[-1].get("writer_feedback_prompt")
+            or last_candidate[-1].get("repair_prompt")
+        )
         if isinstance(repair_prompt, str):
             candidates.append(session_root / repair_prompt)
 

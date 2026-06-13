@@ -110,6 +110,29 @@ class _ReviewerFakeTransport:
         return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"b\"\n```", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/writer_1"}})()
 
 
+class _ScopeReviewerFakeTransport:
+    def __init__(self):
+        self.calls = []
+        self.reviewer_calls = 0
+
+    def start_session(self, initial_prompt: str):
+        self.calls.append(("start", initial_prompt))
+        if "# LBH Reviewer Scope Check" in initial_prompt:
+            self.reviewer_calls += 1
+            return type("Started", (), {"session_id": "reviewer_1", "response": type("Resp", (), {"text": "This is too narrow for the project-wide request. Discard this candidate and ask for a fresh candidate with broader coverage.", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/reviewer_1"}})()})()
+        return type("Started", (), {"session_id": "writer_1", "response": type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"b\"\n```", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/writer_1"}})()})()
+
+    def send(self, session_id: str, message: str):
+        self.calls.append(("send", session_id, message))
+        if session_id == "reviewer_1":
+            self.reviewer_calls += 1
+            assert "# LBH Reviewer Scope Check" in message
+            return type("Resp", (), {"text": "Promote this candidate. It is sufficient for the request.", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/reviewer_1"}})()
+        assert session_id == "writer_1"
+        assert "previous candidate was judged too narrow" in message
+        return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"c\"\n```", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/writer_1"}})()
+
+
 def _init_gateway_repo(tmp_path: Path, monkeypatch):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     (tmp_path / "src").mkdir()
@@ -279,3 +302,29 @@ def test_gateway_loop_uses_reviewer_feedback_for_failed_candidate(tmp_path, monk
     assert first_candidate["status"] == "promotion_failed_static"
     assert first_candidate["review_response"].startswith("reviewers/review_001.response.md")
     assert first_candidate["writer_feedback_prompt"].startswith("reviewers/review_001.writer_feedback.md")
+
+
+def test_gateway_loop_discards_underscoped_promoted_candidate(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
+
+    transport = _ScopeReviewerFakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request="Refactor the entire project",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=5,
+    )
+
+    assert result.status == "applied"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "c"\n'
+    assert transport.reviewer_calls == 2
+
+    manifest = manager.load_manifest(result.session_root)
+    first_candidate = manifest["candidates"][0]
+    second_candidate = manifest["candidates"][1]
+    assert first_candidate["status"] == "candidate_underscoped"
+    assert first_candidate["scope_decision"] == "discard_and_explore"
+    assert first_candidate["explore_prompt"].startswith("reviewers/review_001.writer_feedback.md")
+    assert second_candidate["scope_decision"] == "promote"
+    assert manifest["patch"]["source_candidate"] == second_candidate["path"]

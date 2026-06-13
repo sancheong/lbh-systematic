@@ -9,6 +9,37 @@ from typing import Any
 MAX_DIFF_CHARS = 50000
 MAX_REVIEW_CHARS = 30000
 
+LOW_SCOPE_TERMS = (
+    "too narrow",
+    "underscoped",
+    "under-scoped",
+    "insufficient",
+    "does not satisfy",
+    "doesn't satisfy",
+    "not enough",
+    "discard",
+    "fresh candidate",
+    "broader",
+    "too small",
+    "좁",
+    "협소",
+    "불충분",
+    "부족",
+    "요청을 만족",
+    "새 후보",
+)
+
+PROMOTE_TERMS = (
+    "promote",
+    "sufficient",
+    "adequate",
+    "fits the request",
+    "request is satisfied",
+    "승격",
+    "충분",
+    "적절",
+)
+
 
 @dataclass(frozen=True)
 class ReviewArtifacts:
@@ -125,6 +156,60 @@ def build_reviewer_prompt(
     )
 
 
+def build_scope_reviewer_prompt(
+    *,
+    session_root: Path,
+    manifest: dict[str, Any],
+    candidate_entry: dict[str, Any],
+) -> str:
+    candidate_rel = str(candidate_entry.get("path") or "")
+    promotion_rel = str(candidate_entry.get("promotion") or "")
+    candidate_text = _read_rel(session_root, candidate_rel)
+    promotion = _read_json_rel(session_root, promotion_rel)
+
+    return "\n".join(
+        [
+            "# LBH Reviewer Scope Check",
+            "",
+            "A separate writer ChatGPT session produced a candidate patch that passed the mechanical promotion gates.",
+            "Review whether this candidate is actually enough for the user's request, not just whether it is safe.",
+            "",
+            "Use normal concise Markdown. Do not output JSON.",
+            "Say plainly whether the candidate should be promoted as-is or discarded so the writer explores a broader direction.",
+            "If the candidate is too narrow, explain what broader direction the writer should try next.",
+            "Do not write a replacement patch.",
+            "",
+            "## Original User Request",
+            "",
+            str(manifest.get("user_request") or ""),
+            "",
+            "## Candidate Metadata",
+            "",
+            "```json",
+            json.dumps(
+                {
+                    "candidate": candidate_rel,
+                    "status": candidate_entry.get("status"),
+                    "modified_files": promotion.get("modified_files"),
+                    "selected_tests": promotion.get("selected_tests"),
+                    "warnings": promotion.get("warnings"),
+                    "validation_summary": promotion.get("validation_summary"),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "```",
+            "",
+            "## Candidate Diff",
+            "",
+            "```diff",
+            _truncate(candidate_text, MAX_DIFF_CHARS),
+            "```",
+            "",
+        ]
+    )
+
+
 def build_writer_feedback_prompt(
     *,
     base_repair_prompt: str,
@@ -152,6 +237,41 @@ def build_writer_feedback_prompt(
             "",
         ]
     )
+
+
+def build_explore_feedback_prompt(
+    *,
+    reviewer_response: str,
+    candidate_rel: str,
+    reviewer_response_rel: str,
+) -> str:
+    return "\n".join(
+        [
+            "You are revising your previous direction, not repairing its local validation error.",
+            "",
+            "The previous candidate was judged too narrow for the user's request.",
+            "Produce a complete replacement candidate against the original session repository state.",
+            "Do not preserve the previous candidate's scope if that would keep the change too small.",
+            "You may request more context with `lbh-tool` before patching if needed.",
+            "",
+            f"Candidate reviewed: `{candidate_rel}`",
+            f"Reviewer artifact: `{reviewer_response_rel}`",
+            "",
+            "# Reviewer Scope Feedback",
+            "",
+            "```text",
+            _truncate(reviewer_response, MAX_REVIEW_CHARS),
+            "```",
+            "",
+        ]
+    )
+
+
+def review_suggests_discard_and_explore(review_text: str) -> bool:
+    normalized = " ".join(review_text.lower().split())
+    low_scope_hit = any(term in normalized for term in LOW_SCOPE_TERMS)
+    promote_hit = any(term in normalized for term in PROMOTE_TERMS)
+    return low_scope_hit and not promote_hit
 
 
 def _read_rel(session_root: Path, rel: str) -> str:
