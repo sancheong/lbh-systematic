@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lbh.context.packer import ContextPacker
 from lbh.core.config import Config
+from lbh.core.models import CandidateIssue
 from lbh.core.request_classification import RequestClassification, classify_patch_request
 from lbh.core.fs import write_text_exact
 from lbh.indexer.builder import RepoIndexer
@@ -29,6 +30,7 @@ from lbh.protocol.parser import (
 from lbh.protocol.tools import ToolExecutor
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
+from lbh.validation.promotion import promote_candidate, write_promotion_result
 
 
 @dataclass(frozen=True)
@@ -177,13 +179,34 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
         )
 
         manifest["latest_candidate"] = candidate_rel
-        if validation.ok:
+        promotion = promote_candidate(
+            repo_root=repo,
+            session_root=session_root,
+            candidate_path=paths.diff,
+            validation=validation,
+            patch_path=session_paths.patch,
+        )
+        promotion_path = write_promotion_result(session_root, promotion)
+        promotion_rel = promotion_path.relative_to(session_root).as_posix()
+        if promotion.ok:
             validation.promoted_to_patch = True
-            write_text_exact(session_paths.patch, diff)
+        elif validation.structural_ok:
+            validation.ok = False
+            validation.errors.append(
+                CandidateIssue(
+                    kind=promotion.failed_check or "promotion_failed",
+                    message=promotion.exact_stop_reason or promotion.status,
+                )
+            )
+            validation.repair_instruction.append("Produce a complete replacement candidate against the original session repository state.")
+            validation.repair_instruction.append("Fix only the failed promotion gate.")
+
+        if promotion.ok:
             manifest["patch"] = {
                 "path": session_paths.patch.name,
                 "source_candidate": candidate_rel,
                 "validation": validation.to_dict(),
+                "promotion": promotion.to_dict(session_root),
             }
         paths.validation.write_text(json.dumps(validation.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         paths.critique.write_text(render_candidate_critique(validation), encoding="utf-8")
@@ -194,10 +217,15 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
                 "validation": paths.validation.relative_to(session_root).as_posix(),
                 "critique": paths.critique.relative_to(session_root).as_posix(),
                 "repair_prompt": paths.repair_prompt.relative_to(session_root).as_posix(),
+                "promotion": promotion_rel,
                 "ok": validation.ok,
+                "structural_ok": validation.structural_ok,
+                "status": promotion.status,
+                "failed_check": promotion.failed_check,
                 "promoted_to_patch": validation.promoted_to_patch,
             }
         )
+        manifest["latest_promotion"] = promotion_rel
         manager.write_manifest(session_root, manifest)
         manager.append_event(
             session_root,
@@ -205,6 +233,8 @@ def process_response_file(repo: Path, session_root: Path, response_file: Path) -
                 "type": "candidate_patch",
                 "file": candidate_rel,
                 "ok": validation.ok,
+                "structural_ok": validation.structural_ok,
+                "promotion_status": promotion.status,
                 "promoted_to_patch": validation.promoted_to_patch,
             },
         )

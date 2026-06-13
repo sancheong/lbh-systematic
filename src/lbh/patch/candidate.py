@@ -105,7 +105,8 @@ def validate_candidate(
 
     validation.preserve.extend(_preserve_notes(raw_response))
     validation.repair_instruction.extend(_repair_instructions(validation))
-    validation.ok = not validation.errors
+    validation.structural_ok = not validation.errors
+    validation.ok = validation.structural_ok
     return validation
 
 
@@ -138,7 +139,9 @@ def render_repair_prompt(validation: CandidateValidation) -> str:
         "You are repairing a ChatGPT-generated candidate patch.",
         "",
         "Do not redesign the feature.",
-        "Use the candidate patch as the starting point.",
+        "Do not produce an incremental patch against the previous failed candidate.",
+        "Produce a complete replacement candidate against the original session repository state.",
+        "Use the candidate patch as the reference point.",
         "Fix only the validation failures listed below.",
         "",
         "Candidate:",

@@ -24,10 +24,16 @@ class RunResult:
     working_tree_dirty: bool | None
     session_path: str | None
     response_file: str | None
+    candidate_path: str | None
+    promoted_patch_path: str | None
     patch_path: str | None
     rounds: int | None
     gateway_url: str
     stop_reason: str
+    exact_stop_reason: str
+    failed_check: str | None
+    validation_summary: dict[str, str] | None
+    checks: list[dict[str, object]] | None
     next_safe_command: str
 
     def to_json(self) -> str:
@@ -82,10 +88,16 @@ def run_request(
             working_tree_dirty=final_preflight.working_tree_dirty,
             session_path=None,
             response_file=None,
+            candidate_path=None,
+            promoted_patch_path=None,
             patch_path=None,
             rounds=None,
             gateway_url=GATEWAY_URL,
             stop_reason=f"{GATEWAY_API_KEY_ENV} is not set.",
+            exact_stop_reason=f"{GATEWAY_API_KEY_ENV} is not set.",
+            failed_check=None,
+            validation_summary=None,
+            checks=None,
             next_safe_command=f"Set {GATEWAY_API_KEY_ENV}, then rerun `lbh run`.",
         )
 
@@ -113,10 +125,16 @@ def run_request(
             working_tree_dirty=final_preflight.working_tree_dirty,
             session_path=None,
             response_file=None,
+            candidate_path=None,
+            promoted_patch_path=None,
             patch_path=None,
             rounds=None,
             gateway_url=GATEWAY_URL,
             stop_reason=str(exc),
+            exact_stop_reason=str(exc),
+            failed_check="gateway_run",
+            validation_summary=None,
+            checks=None,
             next_safe_command="Inspect the gateway logs and rerun `lbh run` after fixing the failure.",
         )
 
@@ -164,10 +182,16 @@ def _from_preflight(preflight: PreflightResult, *, init_ran: bool, index_ran: bo
         working_tree_dirty=preflight.working_tree_dirty,
         session_path=None,
         response_file=None,
+        candidate_path=None,
+        promoted_patch_path=None,
         patch_path=None,
         rounds=None,
         gateway_url=preflight.gateway_url,
         stop_reason=preflight.stop_reason,
+        exact_stop_reason=preflight.stop_reason,
+        failed_check=None,
+        validation_summary=None,
+        checks=None,
         next_safe_command=preflight.next_safe_command,
     )
 
@@ -194,10 +218,16 @@ def _from_gateway_result(
         working_tree_dirty=preflight.working_tree_dirty,
         session_path=str(gateway_result.session_root),
         response_file=str(gateway_result.response_file) if gateway_result.response_file is not None else None,
+        candidate_path=str(gateway_result.candidate_path) if gateway_result.candidate_path is not None else None,
+        promoted_patch_path=str(gateway_result.promoted_patch_path) if gateway_result.promoted_patch_path is not None else None,
         patch_path=str(gateway_result.patch_file) if gateway_result.patch_file is not None else None,
         rounds=gateway_result.rounds,
         gateway_url=preflight.gateway_url,
         stop_reason=stop_reason,
+        exact_stop_reason=stop_reason,
+        failed_check=gateway_result.failed_check,
+        validation_summary=gateway_result.validation_summary,
+        checks=gateway_result.checks,
         next_safe_command=next_safe_command,
     )
 

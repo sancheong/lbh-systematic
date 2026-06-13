@@ -9,13 +9,15 @@ from lbh.core.fs import short_line_hash
 from lbh.session.manager import SessionManager
 
 
+VALUE_A = 'VALUE = "a"'
+
 VALID_DIFF = """<<<LBH_DIFF_BEGIN>>>
 diff --git a/src/a.py b/src/a.py
 --- a/src/a.py
 +++ b/src/a.py
 @@ -1 +1 @@
--a
-+b
+-VALUE = "a"
++VALUE = "b"
 <<<LBH_DIFF_END>>>
 """
 
@@ -39,10 +41,10 @@ HASHLINE_EXISTING_SNIPPET_EDIT = f"""```lbh-hashline-patch
     {{
       "path": "src/a.py",
       "start_line": 1,
-      "start_hash": "{short_line_hash('a')}",
+      "start_hash": "{short_line_hash(VALUE_A)}",
       "end_line": 1,
-      "end_hash": "{short_line_hash('a')}",
-      "new": "b"
+      "end_hash": "{short_line_hash(VALUE_A)}",
+      "new": "VALUE = \\"b\\""
     }}
   ]
 }}
@@ -53,9 +55,19 @@ diff --git a/src/a.py b/src/a.py
 --- a/src/a.py
 +++ b/src/a.py
 @@ -1,2 +1,2 @@
- a
--b
-+c
+ VALUE = "a"
+-VALUE = "b"
++VALUE = "c"
+<<<LBH_DIFF_END>>>
+"""
+
+UNDEFINED_NAME_DIFF = """<<<LBH_DIFF_BEGIN>>>
+diff --git a/src/a.py b/src/a.py
+--- a/src/a.py
++++ b/src/a.py
+@@ -1 +1 @@
+-VALUE = "a"
++VALUE = missing_name
 <<<LBH_DIFF_END>>>
 """
 
@@ -63,7 +75,7 @@ def _init_repo(tmp_path: Path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     init_config(tmp_path)
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "src" / "a.py").write_text('VALUE = "a"\n', encoding="utf-8")
     manager = SessionManager(tmp_path)
     session = manager.create("fix a", ranked=[])
     manager.register_read_file(session.root, "src/a.py", "sha256", [{"start": 1, "end": 1}])
@@ -192,7 +204,7 @@ def test_hashline_candidate_inside_initial_snippet_range_is_read(tmp_path, monke
 
 def test_candidate_patch_rejects_diff_outside_read_range(tmp_path, monkeypatch):
     _, session = _init_repo(tmp_path)
-    (tmp_path / "src" / "a.py").write_text("a\nb\n", encoding="utf-8")
+    (tmp_path / "src" / "a.py").write_text('VALUE = "a"\nVALUE = "b"\n', encoding="utf-8")
     response_file = tmp_path / "empty_range.md"
     response_file.write_text(OUTSIDE_READ_RANGE_DIFF, encoding="utf-8")
 
@@ -241,6 +253,70 @@ def test_candidate_patch_failure_generates_critique_and_no_patch(tmp_path, monke
     assert manifest["latest_candidate"] == "candidates/candidate_001.diff"
     assert manifest["candidates"][0]["ok"] is False
     assert manifest["candidates"][0]["promoted_to_patch"] is False
+
+
+def test_candidate_patch_static_promotion_failure_does_not_write_patch(tmp_path, monkeypatch):
+    manager, session = _init_repo(tmp_path)
+    response_file = tmp_path / "undefined.md"
+    response_file.write_text(UNDEFINED_NAME_DIFF, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    assert rc == 3
+    assert not session.patch.exists()
+
+    validation_path = session.root / "candidates" / "candidate_001.validation.json"
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["structural_ok"] is True
+    assert validation["ok"] is False
+    assert any(item["kind"] == "static" for item in validation["errors"])
+
+    manifest = manager.load_manifest(session.root)
+    candidate = manifest["candidates"][0]
+    assert candidate["status"] == "promotion_failed_static"
+    assert candidate["structural_ok"] is True
+    assert candidate["promoted_to_patch"] is False
+    promotion = json.loads((session.root / candidate["promotion"]).read_text(encoding="utf-8"))
+    assert promotion["status"] == "promotion_failed_static"
+    assert promotion["promoted_patch_path"] is None
+
+
+def test_candidate_patch_targeted_test_failure_does_not_write_patch(tmp_path, monkeypatch):
+    manager, session = _init_repo(tmp_path)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_a.py").write_text("def test_failure():\n    assert False\n", encoding="utf-8")
+    response_file = tmp_path / "final.md"
+    response_file.write_text(VALID_DIFF, encoding="utf-8")
+
+    rc = _run_respond(tmp_path, session.root, response_file, monkeypatch)
+    assert rc == 3
+    assert not session.patch.exists()
+
+    manifest = manager.load_manifest(session.root)
+    candidate = manifest["candidates"][0]
+    assert candidate["status"] == "promotion_failed_tests"
+    promotion = json.loads((session.root / candidate["promotion"]).read_text(encoding="utf-8"))
+    assert promotion["selected_tests"] == ["tests/test_a.py"]
+    assert promotion["validation_summary"]["targeted_tests"] == "failed"
+    assert any(check["kind"] == "targeted_tests" and check["status"] == "failed" for check in promotion["checks"])
+
+
+def test_failed_candidate_never_overwrites_existing_patch_diff(tmp_path, monkeypatch):
+    manager, session = _init_repo(tmp_path)
+    first = tmp_path / "first.md"
+    second = tmp_path / "second.md"
+    first.write_text(VALID_DIFF, encoding="utf-8")
+    second.write_text(UNDEFINED_NAME_DIFF, encoding="utf-8")
+
+    assert _run_respond(tmp_path, session.root, first, monkeypatch) == 0
+    original_patch = session.patch.read_text(encoding="utf-8")
+    assert 'VALUE = "b"' in original_patch
+
+    assert _run_respond(tmp_path, session.root, second, monkeypatch) == 3
+    assert session.patch.read_text(encoding="utf-8") == original_patch
+
+    manifest = manager.load_manifest(session.root)
+    assert manifest["patch"]["source_candidate"] == "candidates/candidate_001.diff"
+    assert manifest["candidates"][1]["status"] == "promotion_failed_static"
 
 
 def test_candidate_patch_numbering_increments(tmp_path, monkeypatch):

@@ -88,13 +88,13 @@ class _FakeTransport:
 
     def send(self, session_id: str, message: str):
         self.calls.append(("send", session_id, message))
-        return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-a\n+b\n```", "metadata": {"transport": "fake"}})()
+        return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"b\"\n```", "metadata": {"transport": "fake"}})()
 
 
 def _init_gateway_repo(tmp_path: Path, monkeypatch):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "src" / "a.py").write_text('VALUE = "a"\n', encoding="utf-8")
     init_config(tmp_path)
     manager = SessionManager(tmp_path)
 
@@ -167,7 +167,7 @@ def test_gateway_loop_routes_broad_request_to_plan_mode_without_transport(tmp_pa
     assert plan["schema"] == "lbh.plan.v1"
     assert plan["prompt_files"] == [f".lbh/plans/{result.session_root.name}/prompts/task_prompt_001.md"]
     assert (tmp_path / plan["prompt_files"][0]).read_text(encoding="utf-8") == "initial prompt"
-    assert not (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "b\n"
+    assert not (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "b"\n'
 
 
 def test_gateway_loop_request_file_bypasses_reclassification_and_sends_exact_prompt(tmp_path, monkeypatch):
@@ -206,7 +206,7 @@ def test_gateway_loop_applies_patch_by_default_after_patch_ready(tmp_path, monke
     )
 
     assert result.status == "applied"
-    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "b\n"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "b"\n'
     manifest = manager.load_manifest(result.session_root)
     assert manifest["transport"] == "catgpt-gateway"
     assert manifest["transport_session_id"] == "thr_1"
@@ -230,4 +230,4 @@ def test_gateway_loop_can_skip_apply_after_patch_ready(tmp_path, monkeypatch):
     assert result.status == "patch_ready"
     assert result.patch_file == result.session_root / "patch.diff"
     assert result.message == "git apply --check passed"
-    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "a\n"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "a"\n'

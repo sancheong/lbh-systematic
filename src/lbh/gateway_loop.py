@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from lbh.core.config import Config
 from lbh.session.manager import SessionManager
@@ -23,6 +24,11 @@ class GatewayLoopResult:
     response_file: Path | None = None
     patch_file: Path | None = None
     message: str = ""
+    failed_check: str | None = None
+    candidate_path: Path | None = None
+    promoted_patch_path: Path | None = None
+    validation_summary: dict[str, str] | None = None
+    checks: list[dict[str, Any]] | None = None
 
 
 def run_gateway_loop(
@@ -81,8 +87,8 @@ def run_gateway_loop(
         )
 
     for round_num in range(2, max_rounds + 1):
-        if _patch_exists(session_root):
-            patch_file = session_root / "patch.diff"
+        patch_file = _promoted_patch_file(manager, session_root)
+        if patch_file is not None:
             return _finish_patch_ready(
                 repo,
                 session_root,
@@ -110,8 +116,8 @@ def run_gateway_loop(
                 message=outcome.error_message or f"Unexpected processing outcome: {outcome.kind}",
             )
 
-    patch_file = session_root / "patch.diff"
-    if patch_file.exists():
+    patch_file = _promoted_patch_file(manager, session_root)
+    if patch_file is not None:
         return _finish_patch_ready(
             repo,
             session_root,
@@ -132,6 +138,7 @@ def _finish_patch_ready(
     response_file: Path,
     skip_apply: bool,
 ) -> GatewayLoopResult:
+    promotion = _promotion_from_manifest(SessionManager(repo), session_root)
     outcome = apply_patch_ready(repo, patch_file, session_root=session_root, skip_apply=skip_apply)
     if not outcome.ok:
         message = outcome.output or "; ".join(outcome.validation_errors) or "patch apply failed"
@@ -142,6 +149,11 @@ def _finish_patch_ready(
             response_file=response_file,
             patch_file=patch_file,
             message=message,
+            failed_check="apply",
+            candidate_path=_candidate_path_from_promotion(session_root, promotion),
+            promoted_patch_path=patch_file,
+            validation_summary=_validation_summary_from_promotion(promotion),
+            checks=_checks_from_promotion(promotion),
         )
     status = "patch_ready" if skip_apply else "applied"
     return GatewayLoopResult(
@@ -151,6 +163,10 @@ def _finish_patch_ready(
         response_file=response_file,
         patch_file=patch_file,
         message=outcome.output,
+        candidate_path=_candidate_path_from_promotion(session_root, promotion),
+        promoted_patch_path=patch_file,
+        validation_summary=_validation_summary_from_promotion(promotion),
+        checks=_checks_from_promotion(promotion),
     )
 
 
@@ -195,8 +211,63 @@ def _write_response_file(
     return path
 
 
-def _patch_exists(session_root: Path) -> bool:
-    return (session_root / "patch.diff").exists()
+def _promoted_patch_file(manager: SessionManager, session_root: Path) -> Path | None:
+    manifest = manager.load_manifest(session_root)
+    patch = manifest.get("patch")
+    if not isinstance(patch, dict):
+        return None
+    promotion = patch.get("promotion")
+    if not isinstance(promotion, dict) or promotion.get("ok") is not True:
+        return None
+    patch_name = patch.get("path")
+    promoted_path = promotion.get("promoted_patch_path")
+    if patch_name != "patch.diff" or promoted_path != "patch.diff":
+        return None
+    patch_file = session_root / "patch.diff"
+    return patch_file if patch_file.exists() else None
+
+
+def _promotion_from_manifest(manager: SessionManager, session_root: Path) -> dict[str, Any] | None:
+    manifest = manager.load_manifest(session_root)
+    patch = manifest.get("patch")
+    if isinstance(patch, dict) and isinstance(patch.get("promotion"), dict):
+        return patch["promotion"]
+    return None
+
+
+def _candidate_path_from_promotion(session_root: Path, promotion: dict[str, Any] | None) -> Path | None:
+    if not promotion:
+        return None
+    candidate = promotion.get("candidate_path")
+    if isinstance(candidate, str):
+        return session_root / candidate
+    return None
+
+
+def _validation_summary_from_promotion(promotion: dict[str, Any] | None) -> dict[str, str] | None:
+    if not promotion:
+        return None
+    checks = promotion.get("checks")
+    if not isinstance(checks, list):
+        return None
+    summary = {
+        "protocol": "passed",
+        "diff": "passed",
+        "sandbox_apply": "not_run",
+        "static": "not_run",
+        "targeted_tests": "not_run",
+        "cli_smoke": "not_run",
+    }
+    for check in checks:
+        if isinstance(check, dict) and isinstance(check.get("kind"), str) and isinstance(check.get("status"), str):
+            summary[check["kind"]] = check["status"]
+    return summary
+
+
+def _checks_from_promotion(promotion: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+    if not promotion or not isinstance(promotion.get("checks"), list):
+        return None
+    return [item for item in promotion["checks"] if isinstance(item, dict)]
 
 
 def _is_expected_outcome(outcome: ResponseOutcome) -> bool:

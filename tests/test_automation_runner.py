@@ -20,8 +20,8 @@ diff --git a/src/a.py b/src/a.py
 --- a/src/a.py
 +++ b/src/a.py
 @@ -1 +1 @@
--a
-+b
+-VALUE = "a"
++VALUE = "b"
 <<<LBH_DIFF_END>>>
 ````
 """
@@ -32,8 +32,8 @@ diff --git a/src/a.py b/src/a.py
 --- a/src/a.py
 +++ b/src/a.py
 @@ -1 +1 @@
--a
-+b
+-VALUE = "a"
++VALUE = "b"
 <<<LBH_DIFF_END>>>
 LBH_ANSWER_END
 """
@@ -78,7 +78,7 @@ def _init_repo(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     init_config(tmp_path)
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "a.py").write_text("a\n", encoding="utf-8")
+    (tmp_path / "src" / "a.py").write_text('VALUE = "a"\n', encoding="utf-8")
 
 
 def _ask_fn(register_read: bool = False):
@@ -106,7 +106,7 @@ def test_automation_runner_handles_context_append_and_apply_yes(tmp_path):
     result = runner.start("fix a")
 
     assert result.state == "completed"
-    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == "b\n"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "b"\n'
     assert controller.sent_messages[0] == "initial prompt"
     assert "<file path=\"src/a.py\"" in controller.sent_messages[1]
 
