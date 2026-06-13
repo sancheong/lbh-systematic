@@ -69,7 +69,7 @@ class CatGptGatewayTransport:
         metadata = {
             "transport": "catgpt-gateway",
         }
-        for key in ("provider", "model", "thread_id", "id"):
+        for key in ("provider", "model", "thread_id", "thread_url", "id"):
             value = data.get(key)
             if isinstance(value, str) and value:
                 metadata[key] = value

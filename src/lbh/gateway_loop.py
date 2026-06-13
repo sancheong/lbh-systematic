@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from lbh.core.config import Config
+from lbh.reviewer import build_reviewer_prompt, build_writer_feedback_prompt, next_review_index, review_artifacts
 from lbh.session.manager import SessionManager
 from lbh.transport.catgpt_gateway import CatGptGatewayTransport
 from lbh.workflow import (
@@ -72,7 +73,7 @@ def run_gateway_loop(
 
     transport = transport or CatGptGatewayTransport(base_url=base_url, api_key=api_key)
     started = transport.start_session(initial_prompt.read_text(encoding="utf-8"))
-    _record_transport_session(manager, session_root, base_url, started.session_id)
+    _record_transport_session(manager, session_root, base_url, started.session_id, started.response.metadata)
     response_file = _write_response_file(manager, session_root, 1, started.response.text, started.response.metadata)
     outcome = process_response_file(repo, session_root, response_file)
     if outcome.return_code == 1:
@@ -85,6 +86,9 @@ def run_gateway_loop(
             response_file=response_file,
             message=outcome.error_message or f"Unexpected processing outcome: {outcome.kind}",
         )
+    review_error = _review_failed_candidate_if_needed(manager, session_root, transport, base_url)
+    if review_error:
+        return GatewayLoopResult(session_root=session_root, status="blocked", rounds=1, response_file=response_file, message=review_error)
 
     for round_num in range(2, max_rounds + 1):
         patch_file = _promoted_patch_file(manager, session_root)
@@ -115,6 +119,9 @@ def run_gateway_loop(
                 response_file=response_file,
                 message=outcome.error_message or f"Unexpected processing outcome: {outcome.kind}",
             )
+        review_error = _review_failed_candidate_if_needed(manager, session_root, transport, base_url)
+        if review_error:
+            return GatewayLoopResult(session_root=session_root, status="blocked", rounds=round_num, response_file=response_file, message=review_error)
 
     patch_file = _promoted_patch_file(manager, session_root)
     if patch_file is not None:
@@ -170,11 +177,20 @@ def _finish_patch_ready(
     )
 
 
-def _record_transport_session(manager: SessionManager, session_root: Path, base_url: str, session_id: str) -> None:
+def _record_transport_session(
+    manager: SessionManager,
+    session_root: Path,
+    base_url: str,
+    session_id: str,
+    metadata: dict[str, str] | None,
+) -> None:
     manifest = manager.load_manifest(session_root)
     manifest["transport"] = "catgpt-gateway"
     manifest["transport_base_url"] = base_url
     manifest["transport_session_id"] = session_id
+    thread_url = (metadata or {}).get("thread_url")
+    if thread_url:
+        manifest["transport_session_url"] = thread_url
     manifest.setdefault("responses", [])
     manager.write_manifest(session_root, manifest)
     manager.append_event(
@@ -184,6 +200,7 @@ def _record_transport_session(manager: SessionManager, session_root: Path, base_
             "transport": "catgpt-gateway",
             "base_url": base_url,
             "transport_session_id": session_id,
+            "transport_session_url": thread_url or "",
         },
     )
 
@@ -270,6 +287,103 @@ def _checks_from_promotion(promotion: dict[str, Any] | None) -> list[dict[str, A
     return [item for item in promotion["checks"] if isinstance(item, dict)]
 
 
+def _review_failed_candidate_if_needed(
+    manager: SessionManager,
+    session_root: Path,
+    transport: CatGptGatewayTransport,
+    base_url: str,
+) -> str | None:
+    manifest = manager.load_manifest(session_root)
+    candidate = _latest_unreviewed_failed_candidate(manifest)
+    if candidate is None:
+        return None
+    try:
+        prompt = build_reviewer_prompt(session_root=session_root, manifest=manifest, candidate_entry=candidate)
+        artifacts = review_artifacts(session_root, next_review_index(session_root))
+        artifacts.prompt.write_text(prompt, encoding="utf-8")
+        reviewer = manifest.get("reviewer")
+        if isinstance(reviewer, dict) and isinstance(reviewer.get("transport_session_id"), str):
+            response = transport.send(str(reviewer["transport_session_id"]), prompt)
+            reviewer_session_id = str(reviewer["transport_session_id"])
+            reviewer_thread_url = (response.metadata or {}).get("thread_url") or str(reviewer.get("transport_session_url") or "")
+        else:
+            started = transport.start_session(prompt)
+            response = started.response
+            reviewer_session_id = started.session_id
+            reviewer_thread_url = (response.metadata or {}).get("thread_url") or ""
+            manifest["reviewer"] = {
+                "transport": "catgpt-gateway",
+                "transport_base_url": base_url,
+                "transport_session_id": reviewer_session_id,
+                "transport_session_url": reviewer_thread_url,
+                "reviews": [],
+            }
+
+        artifacts.response.write_text(response.text, encoding="utf-8")
+        base_repair = (session_root / str(candidate["repair_prompt"])).read_text(encoding="utf-8")
+        writer_feedback = build_writer_feedback_prompt(
+            base_repair_prompt=base_repair,
+            reviewer_response=response.text,
+            candidate_rel=str(candidate["path"]),
+            reviewer_response_rel=artifacts.response.relative_to(session_root).as_posix(),
+        )
+        artifacts.writer_feedback.write_text(writer_feedback, encoding="utf-8")
+
+        manifest = manager.load_manifest(session_root)
+        candidates = manifest.get("candidates") or []
+        for entry in candidates:
+            if isinstance(entry, dict) and entry.get("path") == candidate.get("path"):
+                entry["review_prompt"] = artifacts.prompt.relative_to(session_root).as_posix()
+                entry["review_response"] = artifacts.response.relative_to(session_root).as_posix()
+                entry["writer_feedback_prompt"] = artifacts.writer_feedback.relative_to(session_root).as_posix()
+                entry["reviewer_transport_session_id"] = reviewer_session_id
+                entry["reviewer_transport_session_url"] = reviewer_thread_url
+                break
+        reviewer = manifest.setdefault("reviewer", {})
+        reviewer.setdefault("transport", "catgpt-gateway")
+        reviewer.setdefault("transport_base_url", base_url)
+        reviewer["transport_session_id"] = reviewer_session_id
+        reviewer["transport_session_url"] = reviewer_thread_url
+        reviewer.setdefault("reviews", []).append(
+            {
+                "candidate": candidate.get("path"),
+                "prompt": artifacts.prompt.relative_to(session_root).as_posix(),
+                "response": artifacts.response.relative_to(session_root).as_posix(),
+                "writer_feedback_prompt": artifacts.writer_feedback.relative_to(session_root).as_posix(),
+            }
+        )
+        manager.write_manifest(session_root, manifest)
+        manager.append_event(
+            session_root,
+            {
+                "type": "reviewer_feedback",
+                "candidate": candidate.get("path"),
+                "reviewer_transport_session_id": reviewer_session_id,
+                "reviewer_transport_session_url": reviewer_thread_url,
+                "response": artifacts.response.relative_to(session_root).as_posix(),
+                "writer_feedback_prompt": artifacts.writer_feedback.relative_to(session_root).as_posix(),
+            },
+        )
+        return None
+    except Exception as exc:
+        manager.append_event(session_root, {"type": "reviewer_failed", "candidate": candidate.get("path"), "message": str(exc)})
+        return f"Reviewer failed for {candidate.get('path')}: {exc}"
+
+
+def _latest_unreviewed_failed_candidate(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = manifest.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return None
+    latest = candidates[-1]
+    if not isinstance(latest, dict):
+        return None
+    if latest.get("ok") is not False or latest.get("promoted_to_patch") is True:
+        return None
+    if latest.get("writer_feedback_prompt"):
+        return None
+    return latest
+
+
 def _is_expected_outcome(outcome: ResponseOutcome) -> bool:
     return outcome.return_code in (0, 3) and outcome.kind in {"context_append", "candidate_ok", "candidate_failed"}
 
@@ -284,7 +398,7 @@ def _next_outbound_artifact(manager: SessionManager, session_root: Path) -> Path
             candidates.append(session_root / name)
     last_candidate = manifest.get("candidates", [])
     if isinstance(last_candidate, list) and last_candidate:
-        repair_prompt = last_candidate[-1].get("repair_prompt")
+        repair_prompt = last_candidate[-1].get("writer_feedback_prompt") or last_candidate[-1].get("repair_prompt")
         if isinstance(repair_prompt, str):
             candidates.append(session_root / repair_prompt)
 

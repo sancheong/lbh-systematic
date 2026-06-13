@@ -12,10 +12,9 @@ from lbh.automation import AutomationOptions, AutomationRunner, ShellBrowserCont
 from lbh.core.config import Config, init_config
 from lbh.core.fs import format_numbered_lines, read_text, redact_secrets
 from lbh.core.paths import find_repo_root, index_dir, resolve_repo_path
-from lbh.gateway_loop import run_gateway_loop
 from lbh.indexer.builder import RepoIndexer
 from lbh.preflight import run_preflight
-from lbh.run_command import run_request
+from lbh.run_command import run_gateway_request, run_request, validate_gateway_request_source
 from lbh.search.ranker import SearchRanker
 from lbh.session.manager import SessionManager
 from lbh.workflow import apply_patch_file, ask_request, process_response_file
@@ -110,10 +109,16 @@ def cmd_respond(args: argparse.Namespace) -> int:
 def cmd_gateway_run(args: argparse.Namespace) -> int:
     repo = find_repo_root()
     ensure_index(repo)
-    if bool(args.request) == bool(args.request_file):
-        print("Provide exactly one of request or --request-file.", file=sys.stderr)
+    try:
+        validate_gateway_request_source(
+            args.request,
+            args.request_file,
+            message="Provide exactly one of request or --request-file.",
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
-    result = run_gateway_loop(
+    result = run_gateway_request(
         repo,
         request=args.request,
         request_file=Path(args.request_file) if args.request_file else None,

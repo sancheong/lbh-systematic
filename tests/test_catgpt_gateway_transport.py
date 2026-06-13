@@ -48,8 +48,8 @@ def test_gateway_transport_start_session_and_send(monkeypatch):
             }
         )
         if req.full_url.endswith("/thread/new"):
-            return _FakeHttpResponse({"thread_id": "thr_123", "message": "hello"})
-        return _FakeHttpResponse({"message": "next reply", "provider": "chatgpt"})
+            return _FakeHttpResponse({"thread_id": "thr_123", "thread_url": "https://chatgpt.com/c/thr_123", "message": "hello"})
+        return _FakeHttpResponse({"message": "next reply", "thread_url": "https://chatgpt.com/c/thr_123", "provider": "chatgpt"})
 
     monkeypatch.setattr("lbh.transport.catgpt_gateway.urlopen", fake_urlopen)
     transport = CatGptGatewayTransport(base_url="http://localhost:8000", api_key="secret", timeout_seconds=9)
@@ -59,7 +59,9 @@ def test_gateway_transport_start_session_and_send(monkeypatch):
 
     assert started.session_id == "thr_123"
     assert started.response.text == "hello"
+    assert started.response.metadata["thread_url"] == "https://chatgpt.com/c/thr_123"
     assert reply.text == "next reply"
+    assert reply.metadata["thread_url"] == "https://chatgpt.com/c/thr_123"
     assert calls[0]["url"] == "http://localhost:8000/thread/new"
     assert calls[0]["body"] == {"message": "first prompt"}
     assert calls[0]["auth"] == "Bearer secret"
@@ -89,6 +91,23 @@ class _FakeTransport:
     def send(self, session_id: str, message: str):
         self.calls.append(("send", session_id, message))
         return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"b\"\n```", "metadata": {"transport": "fake"}})()
+
+
+class _ReviewerFakeTransport:
+    def __init__(self):
+        self.calls = []
+
+    def start_session(self, initial_prompt: str):
+        self.calls.append(("start", initial_prompt))
+        if "# LBH Reviewer Task" in initial_prompt:
+            return type("Started", (), {"session_id": "reviewer_1", "response": type("Resp", (), {"text": "VERDICT: revise\nBLOCKING ISSUES:\n- src/lbh/run_command.py: missing helper\nREQUIRED WRITER CHANGES:\n- define the helper before use\nTESTS TO RUN:\n- tests/test_run_command.py", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/reviewer_1"}})()})()
+        return type("Started", (), {"session_id": "writer_1", "response": type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = missing_name\n```", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/writer_1"}})()})()
+
+    def send(self, session_id: str, message: str):
+        self.calls.append(("send", session_id, message))
+        assert session_id == "writer_1"
+        assert "# Reviewer Feedback" in message
+        return type("Resp", (), {"text": "```diff\ndiff --git a/src/a.py b/src/a.py\n--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-VALUE = \"a\"\n+VALUE = \"b\"\n```", "metadata": {"transport": "fake", "thread_url": "https://chatgpt.com/c/writer_1"}})()
 
 
 def _init_gateway_repo(tmp_path: Path, monkeypatch):
@@ -231,3 +250,32 @@ def test_gateway_loop_can_skip_apply_after_patch_ready(tmp_path, monkeypatch):
     assert result.patch_file == result.session_root / "patch.diff"
     assert result.message == "git apply --check passed"
     assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "a"\n'
+
+
+def test_gateway_loop_uses_reviewer_feedback_for_failed_candidate(tmp_path, monkeypatch):
+    manager = _init_gateway_repo(tmp_path, monkeypatch)
+
+    transport = _ReviewerFakeTransport()
+    result = run_gateway_loop(
+        tmp_path,
+        request="fix a",
+        base_url="http://localhost:8000",
+        transport=transport,
+        max_rounds=4,
+    )
+
+    assert result.status == "applied"
+    assert (tmp_path / "src" / "a.py").read_text(encoding="utf-8") == 'VALUE = "b"\n'
+    assert transport.calls[0][0] == "start"
+    assert transport.calls[1][0] == "start"
+    assert transport.calls[2][0] == "send"
+
+    manifest = manager.load_manifest(result.session_root)
+    assert manifest["transport_session_id"] == "writer_1"
+    assert manifest["transport_session_url"] == "https://chatgpt.com/c/writer_1"
+    assert manifest["reviewer"]["transport_session_id"] == "reviewer_1"
+    assert manifest["reviewer"]["transport_session_url"] == "https://chatgpt.com/c/reviewer_1"
+    first_candidate = manifest["candidates"][0]
+    assert first_candidate["status"] == "promotion_failed_static"
+    assert first_candidate["review_response"].startswith("reviewers/review_001.response.md")
+    assert first_candidate["writer_feedback_prompt"].startswith("reviewers/review_001.writer_feedback.md")
