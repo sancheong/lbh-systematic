@@ -97,6 +97,23 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 DEFAULT_CONFIG: dict[str, Any] = tomllib.loads(DEFAULT_CONFIG_TEXT)
 
 
+def _normalize_rel_path(rel_path: str) -> str:
+    return rel_path.replace("\\", "/")
+
+
+def _matches_exclude_pattern(rel_path: str, pattern: str) -> bool:
+    name = Path(rel_path).name
+    if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(name, pattern):
+        return True
+    if pattern.endswith("/**") and rel_path.startswith(pattern[:-3].rstrip("/") + "/"):
+        return True
+    return False
+
+
+def _matches_include_pattern(rel_path: str, pattern: str) -> bool:
+    return pattern == "**/*" or fnmatch.fnmatch(rel_path, pattern)
+
+
 class Config:
     def __init__(self, data: dict[str, Any]):
         self.data = _deep_merge(DEFAULT_CONFIG, data)
@@ -193,20 +210,21 @@ class Config:
         return self._bool("security", "allow_new_files_without_read", True)
 
     def is_excluded(self, rel_path: str) -> bool:
-        rel = rel_path.replace("\\", "/")
-        name = Path(rel).name
-        for pat in self.exclude:
-            if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(name, pat):
-                return True
-            if pat.endswith("/**") and rel.startswith(pat[:-3].rstrip("/") + "/"):
+        rel = _normalize_rel_path(rel_path)
+        for pattern in self.exclude:
+            if _matches_exclude_pattern(rel, pattern):
                 return True
         return False
 
     def is_included(self, rel_path: str) -> bool:
-        rel = rel_path.replace("\\", "/")
-        if not self.include:
+        rel = _normalize_rel_path(rel_path)
+        include_patterns = self.include
+        if not include_patterns:
             return True
-        return any(fnmatch.fnmatch(rel, pat) or pat == "**/*" for pat in self.include)
+        for pattern in include_patterns:
+            if _matches_include_pattern(rel, pattern):
+                return True
+        return False
 
 
 def init_config(repo_root: Path, force: bool = False) -> Path:
